@@ -13,7 +13,12 @@ class ModelRegistry:
         Args:
             config_file: Path to models YAML configuration
         """
-        self.config_file = Path(config_file)
+        # Make path relative to this module's directory
+        if not Path(config_file).is_absolute():
+            module_dir = Path(__file__).parent.parent
+            self.config_file = module_dir / config_file
+        else:
+            self.config_file = Path(config_file)
         self.models = self._load_models()
     
     def _load_models(self) -> Dict[str, Dict]:

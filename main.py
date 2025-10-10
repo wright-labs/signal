@@ -15,6 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
 import sys
 import os
 import logging
@@ -53,19 +54,21 @@ import modal
 _modal_functions_cache = {}
 
 def get_modal_function(name: str):
-    """Get Modal function by name, with caching."""
-    if name not in _modal_functions_cache:
-        try:
-            # Lookup from deployed Modal app
-            # Try without environment_name first (uses default)
-            _modal_functions_cache[name] = modal.Function.from_name("signal", name)
-        except Exception as e:
-            logging.error(f"Failed to lookup Modal function '{name}': {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Training infrastructure not available. Please ensure Modal functions are deployed."
-            )
-    return _modal_functions_cache[name]
+    """Get Modal function by name from deployed environment."""
+    try:
+        # Lookup from deployed Modal app in the main workspace environment
+        # The environment_name="main" refers to the default environment in your workspace
+        return modal.Function.from_name("signal", name, environment_name="main")
+    except Exception as e:
+        import traceback
+        logging.error(f"Failed to lookup Modal function '{name}': {e}")
+        logging.error(f"Full traceback: {traceback.format_exc()}")
+        logging.error(f"Modal token ID: {os.getenv('MODAL_TOKEN_ID', 'NOT SET')[:10]}...")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Training infrastructure not available. Please ensure Modal functions are deployed."
+        )
+
 
 # Function wrappers for consistent interface
 modal_create_run = lambda: get_modal_function("create_run")
@@ -73,6 +76,28 @@ modal_forward_backward = lambda: get_modal_function("forward_backward")
 modal_optim_step = lambda: get_modal_function("optim_step")
 modal_sample = lambda: get_modal_function("sample")
 modal_save_state = lambda: get_modal_function("save_state")
+
+# =============================================================================
+# LIFESPAN EVENTS
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown."""
+    # Startup
+    logging.info("🚀 Signal API starting...")
+    logging.info("📡 Modal functions will be looked up on first request")
+    
+    # Note: We don't verify Modal connection at startup to avoid:
+    # 1. Startup failures if Modal is temporarily unavailable
+    # 2. Unnecessary GPU provisioning costs
+    # 3. Slow startup times
+    # The first request will validate connectivity naturally.
+    
+    yield
+    
+    # Shutdown
+    logging.info("Shutting down Signal API...")
 
 # =============================================================================
 # APP INITIALIZATION
@@ -83,6 +108,7 @@ app = FastAPI(
     description="Self-hostable training API for fine-tuning language models on Modal",
     version="0.1.0",
     docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
+    lifespan=lifespan,
 )
 
 # =============================================================================
@@ -261,6 +287,43 @@ async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+@app.get("/debug/modal")
+async def debug_modal():
+    """Debug endpoint to test Modal connection."""
+    import modal as modal_lib
+    
+    # Check Modal environment
+    modal_token_id = os.getenv("MODAL_TOKEN_ID", "NOT SET")
+    modal_token_secret = os.getenv("MODAL_TOKEN_SECRET", "NOT SET")
+    
+    debug_info = {
+        "modal_token_id": modal_token_id[:15] + "..." if modal_token_id != "NOT SET" else "NOT SET",
+        "modal_token_secret": "SET" if modal_token_secret != "NOT SET" else "NOT SET",
+        "environment": "main",
+    }
+    
+    try:
+        func = modal_lib.Function.from_name("signal", "create_run", environment_name="main")
+        # Try to actually call it (this provisions a GPU so only use for debugging!)
+        result = func.remote(
+            user_id="debug-test",
+            run_id="debug-001",
+            base_model="Qwen/Qwen2.5-3B",
+            framework="transformers",
+            gpu_config="l40s:1"
+        )
+        return {"status": "success", "modal_works": True, "result": result, "debug": debug_info}
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "modal_works": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(),
+            "debug": debug_info
+        }
+
 
 @app.post("/internal/mark-volume-cleaned")
 async def mark_volume_cleaned(
@@ -384,11 +447,11 @@ async def create_run(
         )
         
         # Call Modal function to initialize run with integrations
-        # Use with_options() to dynamically set GPU config based on model
+        # TODO: GPU config is currently fixed in Modal function definition
+        # For dynamic GPU allocation, consider deploying separate functions per GPU type
         logging.info(f"Creating run with GPU config: {gpu_config}")
-        create_run_fn = modal_create_run().with_options(gpu=gpu_config)
         
-        result = create_run_fn.remote(
+        result = modal_create_run().remote(
             user_id=user_id,
             run_id=run_id,
             base_model=config.base_model,
@@ -448,9 +511,9 @@ async def forward_backward(
         gpu_config = run["config"].get("gpu_config", "l40s:1")
         logging.info(f"Forward-backward with GPU config: {gpu_config}")
         
-        # Call Modal function with dynamic GPU allocation
-        forward_backward_fn = modal_forward_backward().with_options(gpu=gpu_config)
-        result = forward_backward_fn.remote(
+        # Call Modal function
+        # TODO: GPU config is currently fixed in Modal function definition
+        result = modal_forward_backward().remote(
             user_id=user_id,
             run_id=run_id,
             batch_data=fb_request.batch_data,
@@ -499,9 +562,9 @@ async def optim_step(
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
         
-        # Call Modal function with dynamic GPU allocation
-        optim_step_fn = modal_optim_step().with_options(gpu=gpu_config)
-        result = optim_step_fn.remote(
+        # Call Modal function
+        # TODO: GPU config is currently fixed in Modal function definition
+        result = modal_optim_step().remote(
             user_id=user_id,
             run_id=run_id,
             step=current_step,
@@ -549,9 +612,9 @@ async def sample(
         gpu_type = gpu_config.split(":")[0]
         inference_gpu_config = f"{gpu_type}:1"
         
-        # Call Modal function with single GPU for inference
-        sample_fn = modal_sample().with_options(gpu=inference_gpu_config)
-        result = sample_fn.remote(
+        # Call Modal function
+        # TODO: Inference GPU config is currently fixed in Modal function definition
+        result = modal_sample().remote(
             user_id=user_id,
             run_id=run_id,
             prompts=request.prompts,
@@ -591,9 +654,9 @@ async def save_state(
         gpu_type = gpu_config.split(":")[0]
         save_gpu_config = f"{gpu_type}:1"
         
-        # Call Modal function with single GPU for saving
-        save_state_fn = modal_save_state().with_options(gpu=save_gpu_config)
-        result = save_state_fn.remote(
+        # Call Modal function
+        # TODO: Save GPU config is currently fixed in Modal function definition
+        result = modal_save_state().remote(
             user_id=user_id,
             run_id=run_id,
             step=current_step,

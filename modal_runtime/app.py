@@ -61,15 +61,23 @@ TRAINING_IMAGE = (
             "torchaudio",
         ]
     )
-    # Install build dependencies
-    .run_commands(
-        "uv pip install --no-deps -U packaging setuptools wheel ninja --system"
+    # Install build dependencies with uv (uv is available after uv_pip_install)
+    .uv_pip_install(
+        [
+            "packaging",
+            "setuptools",
+            "wheel",
+            "ninja",
+        ]
     )
-    # Install Axolotl with DeepSpeed for multi-GPU support
-    .run_commands("uv pip install --no-build-isolation axolotl[deepspeed] --system")
+    # Install Axolotl with DeepSpeed for multi-GPU support  
+    # Note: Using pip directly as uv has issues with --no-build-isolation
+    .run_commands("pip install --no-build-isolation axolotl[deepspeed]")
+    # Install Unsloth for faster single-GPU training
+    .run_commands("pip install unsloth")
     # Install flash-attention for efficient attention computation
     .run_commands(
-        "UV_NO_BUILD_ISOLATION=1 uv pip install flash-attn --no-build-isolation --system"
+        "pip install flash-attn --no-build-isolation"
     )
     # Additional dependencies for compatibility
     .uv_pip_install(
@@ -101,4 +109,10 @@ TRAINING_IMAGE = (
 # Using vLLM and flash-attn causes OOM during image build, so we use the training image
 # which already has transformers and can do inference just fine
 INFERENCE_IMAGE = TRAINING_IMAGE
+
+# =============================================================================
+# IMPORT PRIMITIVES TO REGISTER FUNCTIONS
+# =============================================================================
+# This must be at the end after all images and secrets are defined
+import modal_runtime.primitives  # noqa: F401
 

@@ -211,28 +211,12 @@ def create_run(
         }
         save_run_config(user_id, run_id, config)
         
-        # Generate Axolotl config for multi-GPU training
+        # Save training configuration for reference
+        # Note: Multi-GPU training uses Accelerate FSDP, not Axolotl
         if gpu_count > 1:
-            print(f"Generating Axolotl config for {gpu_count}-GPU training...")
-            axolotl_config_yaml = generate_axolotl_config(
-                base_model=base_model,
-                lora_r=lora_r,
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                lora_target_modules=lora_target_modules,
-                learning_rate=learning_rate,
-                max_seq_length=max_seq_length,
-                optimizer=optimizer,
-                bf16=bf16,
-                gradient_checkpointing=gradient_checkpointing,
-                num_gpus=gpu_count,
-                output_dir=str(paths["base"] / "axolotl_output"),
-            )
-            axolotl_config_path = str(paths["base"] / "axolotl_config.yml")
-            write_config_to_volume(axolotl_config_yaml, axolotl_config_path, data_volume)
-            print(f"✓ Axolotl config saved to {axolotl_config_path}")
+            print(f"Multi-GPU mode: Will use Accelerate FSDP for {gpu_count} GPUs")
         else:
-            print("Single GPU mode - using PEFT directly")
+            print(f"Single GPU mode: Using {framework} framework")
         
         # Load model and tokenizer
         print("Loading model...")

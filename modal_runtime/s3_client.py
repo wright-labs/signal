@@ -3,8 +3,6 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
-import boto3
-from botocore.exceptions import ClientError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 def get_s3_client():
     """Initialize boto3 S3 client with credentials from environment."""
+    # Import here to avoid issues with local Modal CLI validation
+    import boto3
+    
     return boto3.client(
         's3',
         aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
@@ -112,8 +113,10 @@ def upload_file(local_path: str, s3_path: str, bucket: Optional[str] = None) -> 
             "file_size": file_size,
             "status": "success"
         }
-    except ClientError as e:
-        logger.error(f"Failed to upload {local_path}: {e}")
+    except Exception as e:
+        from botocore.exceptions import ClientError
+        if isinstance(e, ClientError):
+            logger.error(f"Failed to upload {local_path}: {e}")
         raise
 
 
