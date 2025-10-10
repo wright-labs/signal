@@ -1,0 +1,324 @@
+# Signal - Training API for Language Models
+
+Fine-tune language models with LoRA using a simple, powerful API. Train models with composable primitives that give you full control over the training loop.
+
+## Overview
+
+Signal exposes a clean, low-level training API based on four primitives:
+
+1. **`forward_backward`** - Compute gradients for a batch
+2. **`optim_step`** - Update model weights
+3. **`sample`** - Generate text from current checkpoint
+4. **`save_state`** - Export LoRA adapter or merged model
+
+This design gives you full control over the training loop while we handle the infrastructure. Inspired by pioneering work from Thinking Machines on [LoRA fine-tuning](https://thinkingmachines.ai/blog/lora).
+
+### Train Your First Model
+
+```python
+from frontier_signal import SignalClient
+
+# Initialize client
+client = SignalClient(
+    api_key="sk-...",  # Your API key
+    base_url="https://api.signal.example.com"
+)
+
+# List available models
+models = client.list_models()
+print(f"Available models: {models}")
+
+# Create a training run
+run = client.create_run(
+    base_model="meta-llama/Llama-3.2-3B",
+    lora_r=32,
+    lora_alpha=64,
+    learning_rate=3e-4,
+)
+
+# Prepare training data
+batch = [
+    {"text": "The quick brown fox jumps over the lazy dog."},
+    {"text": "Machine learning is transforming technology."},
+]
+
+# Training loop
+for step in range(10):
+    # Forward-backward pass
+    result = run.forward_backward(batch=batch)
+    print(f"Step {step}: Loss = {result['loss']:.4f}")
+    
+    # Optimizer step
+    run.optim_step()
+    
+    # Sample from model every 5 steps
+    if step % 5 == 0:
+        samples = run.sample(
+            prompts=["The meaning of life is"],
+            temperature=0.7,
+        )
+        print(f"Sample: {samples['outputs'][0]}")
+
+# Save final model
+artifact = run.save_state(mode="adapter", push_to_hub=False)
+print(f"Saved to: {artifact['checkpoint_path']}")
+```
+
+## Supported Models
+
+### Llama Family
+
+- `meta-llama/Llama-3.2-1B`
+- `meta-llama/Llama-3.2-3B`
+- `meta-llama/Llama-3.1-8B`
+- `meta-llama/Llama-3.1-8B-Instruct`
+- `meta-llama/Llama-3.1-70B`
+- `meta-llama/Llama-3.3-70B-Instruct`
+
+### Gemma Family
+
+- `google/gemma-2-2b`
+- `google/gemma-2-9b`
+- `unsloth/gemma-2-9b-it-bnb-4bit`
+
+### Qwen Family
+
+- `Qwen/Qwen2.5-3B`
+- `Qwen/Qwen2.5-7B`
+- `Qwen/Qwen2.5-14B`
+- `Qwen/Qwen2.5-32B`
+
+Want a specific model? Contact us and we'll add it!
+
+## Custom LoRA Configuration
+
+```python
+run = client.create_run(
+    base_model="meta-llama/Llama-3.1-8B",
+    lora_r=64,  # Higher rank = more capacity
+    lora_alpha=128,  # Usually 2x lora_r
+    lora_dropout=0.05,
+    lora_target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+)
+```
+
+### Export to HuggingFace Hub
+
+```python
+artifact = run.save_state(
+    mode="merged",
+    push_to_hub=True,
+    hub_model_id="your-username/your-model-name",
+)
+```
+
+## Setup
+
+Signal is designed to be self-hosted on your own infrastructure.
+
+### Prerequisites
+
+1. **Supabase Account** - Sign up at [supabase.com](https://supabase.com) for auth and database
+2. **Modal Account** - Sign up at [modal.com](https://modal.com) for GPU infrastructure
+3. **HuggingFace Account** - For model access tokens
+4. **Python 3.12+** - Recommended version
+
+### Quick Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/signal.git
+cd signal
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup Supabase (follow docs/SUPABASE_SETUP.md)
+# 1. Create Supabase project
+# 2. Run SQL migrations from docs/SUPABASE_SETUP.md
+# 3. Configure Google OAuth
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your Supabase credentials
+
+# Setup Modal
+modal setup
+
+# Deploy Modal functions
+modal deploy modal_runtime/primitives.py
+
+# Create API key in Supabase api_keys table or via script
+# (See QUICKSTART.md for details)
+```
+
+See [QUICKSTART.md](./QUICKSTART.md) for detailed setup instructions.
+
+### Start the API Server
+
+```bash
+# Run locally
+python api/main.py
+
+# Or with uvicorn
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+### Use the API
+
+```python
+from frontier_signal import SignalClient
+
+client = SignalClient(
+    api_key="sk-...",  # Your API key
+    base_url="http://localhost:8000"
+)
+
+run = client.create_run(
+    base_model="meta-llama/Llama-3.2-3B",
+    lora_r=32,
+)
+```
+
+### Configuration
+
+Edit `config/models.yaml` to add or modify supported models:
+
+```yaml
+models:
+  - name: "your-org/your-model"
+    framework: "transformers"  # or "unsloth"
+    gpu: "a100-80gb:1"
+    family: "llama"
+```
+
+**How It Works:**
+
+When configured, Signal API will:
+
+1. **Before training**: Validate user has sufficient credits via `/internal/validate-credits`
+2. **Before training**: Fetch user integrations (WandB, HuggingFace keys) via `/internal/get-integrations`
+3. **After completion**: Deduct credits via `/internal/deduct-credits`
+
+**Self-Hosting Without Billing:**
+
+Leave `FRONTIER_BACKEND_URL` empty to run Signal without credit management. All training operations will work normally, but credit validation and integration management will be disabled.
+
+### Storage
+
+**Database (Supabase PostgreSQL):**
+
+- User profiles and authentication
+- API keys (hashed)
+- Run metadata and configuration
+- Training metrics and logs
+
+**Files (Modal Volumes):**
+
+```bash
+/data/runs/{user_id}/{run_id}/
+  ├── config.json           # Run configuration
+  ├── lora_adapters/        # LoRA checkpoints by step
+  ├── optimizer_state.pt    # Optimizer state
+  ├── gradients/            # Saved gradients
+  └── checkpoints/          # Exported checkpoints
+```
+
+## Security
+
+Signal implements **Row Level Security (RLS)** for database access, following the principle of least privilege.
+
+### Architecture
+
+Instead of using Supabase's service role key (which has unrestricted database access), Signal uses:
+
+- **Anon Key** with limited permissions
+- **RLS Policies** that automatically enforce user isolation
+- **Session Context** set after API key validation
+
+This means:
+
+✅ The API never has god-mode database access  
+✅ Even if compromised, attackers can only access what RLS allows  
+✅ All queries are automatically filtered by user context  
+✅ Defense in depth - multiple security layers
+
+### How It Works
+
+```
+1. Client sends API key in request
+2. API validates key (special RLS policy allows this)
+3. API sets user context: set_user_context(user_id)
+4. All subsequent queries filtered by RLS policies
+```
+
+### For Self-Hosters
+
+When setting up your Supabase database:
+
+1. Run the RLS migration: `supabase/migrations/20250110000001_rls_security.sql`
+2. Use `SUPABASE_ANON_KEY` in your `.env` (not service role key)
+3. RLS policies automatically protect your data
+
+See [`supabase/SETUP.md`](supabase/SETUP.md) for detailed migration instructions.
+
+### Security Best Practices
+
+- ✅ Rotate API keys regularly
+- ✅ Enable rate limiting (`ENABLE_RATE_LIMITING=true`)
+- ✅ Monitor authentication failures in logs
+- ✅ Keep dependencies updated
+- ✅ Use HTTPS in production
+
+## Quick Start
+
+See [QUICKSTART.md](./QUICKSTART.md) for detailed setup instructions.
+
+### TL;DR
+
+```bash
+# 1. Setup Modal
+modal setup
+modal secret create secrets-hf-wandb HF_TOKEN=your_hf_token
+
+# 2. Deploy functions
+modal deploy modal_runtime/primitives.py
+
+# 3. Start API (in another terminal)
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# 4. Use the SDK
+```
+
+### Deployment Guide
+
+For detailed production deployment instructions, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Contributing
+
+We adore contributions!
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **GitHub Issues**: Bug reports and feature requests
+- **Documentation**: See `QUICKSTART.md` and `docs/` folder
+
+## Acknowledgments
+
+Built with:
+
+- [Modal](https://modal.com/) - Serverless GPU infrastructure
+- [PyTorch](https://pytorch.org/) - Deep learning framework
+- [Transformers](https://huggingface.co/transformers) - Model library
+- [PEFT](https://github.com/huggingface/peft) - LoRA implementation
+- [Unsloth](https://github.com/unslothai/unsloth) - Fast fine-tuning
+
+---
+
+Made with ❤️ for the AI research and engineer community
