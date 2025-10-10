@@ -134,8 +134,13 @@ class SaveStateRequest(BaseModel):
 
 class SaveStateResponse(BaseModel):
     """Response from saving state."""
-    artifact_uri: str
-    checkpoint_path: str
+    artifact_uri: str  # Local path (backward compatibility)
+    local_path: Optional[str] = None  # Explicit local path
+    checkpoint_path: str  # Deprecated, use local_path
+    s3_uri: Optional[str] = None  # S3 URI for permanent storage
+    download_url: Optional[str] = None  # Pre-signed S3 download URL
+    download_expires_at: Optional[str] = None  # Expiration timestamp for download URL
+    manifest: Optional[Dict[str, Any]] = None  # Full manifest metadata
     pushed_to_hub: bool
     hub_model_id: Optional[str] = None
 

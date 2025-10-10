@@ -321,7 +321,11 @@ async def create_run(
         )
         
         # Call Modal function to initialize run with integrations
-        result = modal_create_run().remote(
+        # Use with_options() to dynamically set GPU config based on model
+        logging.info(f"Creating run with GPU config: {gpu_config}")
+        create_run_fn = modal_create_run().with_options(gpu=gpu_config)
+        
+        result = create_run_fn.remote(
             user_id=user_id,
             run_id=run_id,
             base_model=config.base_model,
@@ -377,8 +381,13 @@ async def forward_backward(
         # Get current step
         current_step = run["current_step"]
         
-        # Call Modal function
-        result = modal_forward_backward().remote(
+        # Get GPU config from run config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        logging.info(f"Forward-backward with GPU config: {gpu_config}")
+        
+        # Call Modal function with dynamic GPU allocation
+        forward_backward_fn = modal_forward_backward().with_options(gpu=gpu_config)
+        result = forward_backward_fn.remote(
             user_id=user_id,
             run_id=run_id,
             batch_data=fb_request.batch_data,
@@ -424,8 +433,12 @@ async def optim_step(
         # Get current step
         current_step = run["current_step"]
         
-        # Call Modal function
-        result = modal_optim_step().remote(
+        # Get GPU config from run config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Call Modal function with dynamic GPU allocation
+        optim_step_fn = modal_optim_step().with_options(gpu=gpu_config)
+        result = optim_step_fn.remote(
             user_id=user_id,
             run_id=run_id,
             step=current_step,
@@ -466,8 +479,16 @@ async def sample(
         # Get current step
         current_step = run["current_step"]
         
-        # Call Modal function
-        result = modal_sample().remote(
+        # Get GPU config from run config (use single GPU for inference)
+        # For sampling, we use single GPU regardless of training GPU count
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        # Extract just the GPU type for single-GPU inference
+        gpu_type = gpu_config.split(":")[0]
+        inference_gpu_config = f"{gpu_type}:1"
+        
+        # Call Modal function with single GPU for inference
+        sample_fn = modal_sample().with_options(gpu=inference_gpu_config)
+        result = sample_fn.remote(
             user_id=user_id,
             run_id=run_id,
             prompts=request.prompts,
@@ -501,19 +522,37 @@ async def save_state(
         # Get current step
         current_step = run["current_step"]
         
-        # Call Modal function
-        result = modal_save_state().remote(
+        # Get GPU config from run config (use single GPU for saving)
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        # Extract just the GPU type for single-GPU save operation
+        gpu_type = gpu_config.split(":")[0]
+        save_gpu_config = f"{gpu_type}:1"
+        
+        # Call Modal function with single GPU for saving
+        save_state_fn = modal_save_state().with_options(gpu=save_gpu_config)
+        result = save_state_fn.remote(
             user_id=user_id,
             run_id=run_id,
             step=current_step,
             mode=request.mode,
             push_to_hub=request.push_to_hub,
             hub_model_id=request.hub_model_id,
+            training_metrics=None,  # Could fetch from registry if needed
         )
+        
+        # TODO: Update run's last_access_time and s3_artifact_uri in database
+        # This would require adding support to RunRegistry or direct Supabase calls
+        if result.get("s3_uri"):
+            logging.info(f"Artifact saved to S3: {result['s3_uri']}")
         
         return SaveStateResponse(
             artifact_uri=result["artifact_uri"],
-            checkpoint_path=result["checkpoint_path"],
+            local_path=result.get("local_path"),
+            checkpoint_path=result.get("local_path", result["artifact_uri"]),  # Backward compat
+            s3_uri=result.get("s3_uri"),
+            download_url=result.get("download_url"),
+            download_expires_at=result.get("download_expires_at"),
+            manifest=result.get("manifest"),
             pushed_to_hub=result["pushed_to_hub"],
             hub_model_id=result.get("hub_model_id"),
         )
@@ -531,6 +570,53 @@ async def get_run_status(
     try:
         run = await get_authorized_run(run_id, user_id)
         return RunStatus(**run)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/runs/{run_id}/artifacts")
+async def get_run_artifacts(
+    run_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Get all artifacts for a run from S3.
+    
+    Returns list of saved artifacts with download URLs.
+    """
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Query artifacts from database
+        # TODO: Implement artifacts table queries in registry
+        # For now, return basic info from run record
+        
+        artifacts = []
+        if run.get("s3_artifact_uri"):
+            from datetime import datetime, timezone, timedelta
+            from modal_runtime.s3_client import generate_signed_url
+            
+            try:
+                # Generate fresh signed URL
+                download_url = generate_signed_url(run["s3_artifact_uri"], expiration=3600)
+                expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                
+                artifacts.append({
+                    "step": run["current_step"],
+                    "mode": "adapter",  # Default assumption
+                    "s3_uri": run["s3_artifact_uri"],
+                    "download_url": download_url,
+                    "download_expires_at": expires_at,
+                    "created_at": run.get("updated_at", run["created_at"]),
+                })
+            except Exception as e:
+                logging.error(f"Failed to generate signed URL: {e}")
+        
+        return {
+            "run_id": run_id,
+            "artifacts": artifacts,
+        }
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

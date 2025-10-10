@@ -29,6 +29,9 @@ VOLUME_CONFIG = {
 # HuggingFace and WandB secrets
 huggingface_secret = Secret.from_name("secrets-hf-wandb")
 
+# AWS S3 credentials for artifact storage
+s3_secret = Secret.from_name("aws-s3-credentials")
+
 # =============================================================================
 # DOCKER IMAGE CONFIGURATIONS
 # =============================================================================
@@ -38,7 +41,7 @@ CUDA_FLAVOR = "devel"
 CUDA_OS = "ubuntu24.04"
 CUDA_TAG = f"{CUDA_VERSION}-{CUDA_FLAVOR}-{CUDA_OS}"
 
-# Training image with PyTorch, Transformers, PEFT, and Unsloth
+# Training image with PyTorch, Transformers, PEFT, Axolotl and multi-GPU support
 # Add modal_runtime as a local directory so it can be imported as a package
 TRAINING_IMAGE = (
     ModalImage.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
@@ -46,29 +49,40 @@ TRAINING_IMAGE = (
         "git",
         "build-essential",
     )
-    .run_commands("pip install --upgrade pip")
-    .pip_install(
+    # Install PyTorch and core dependencies using uv for better performance
+    .uv_pip_install(
         [
             "torch",
-            "torchvision", 
+            "torchvision",
             "torchaudio",
-            "transformers",
-            "accelerate",
-            "peft",
-            "bitsandbytes",
-            "datasets",
-            "xformers",
-            "trl",
+        ]
+    )
+    # Install build dependencies
+    .run_commands(
+        "uv pip install --no-deps -U packaging setuptools wheel ninja --system"
+    )
+    # Install Axolotl with DeepSpeed for multi-GPU support
+    .run_commands("uv pip install --no-build-isolation axolotl[deepspeed] --system")
+    # Install flash-attention for efficient attention computation
+    .run_commands(
+        "UV_NO_BUILD_ISOLATION=1 uv pip install flash-attn --no-build-isolation --system"
+    )
+    # Additional dependencies for compatibility
+    .uv_pip_install(
+        [
             "sentencepiece",
             "protobuf",
             "safetensors",
             "pyyaml",
             "wandb",
             "requests",
+            "boto3",  # S3 storage
+            "botocore",
         ]
     )
     .env(
         {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",  # Enable faster HF downloads
             "HF_HOME": "/data/.cache",
             "PYTHONPATH": "/root",
         }

@@ -80,3 +80,5 @@ temp/
 # OS
 Thumbs.db
 /supabase/.temp
+
+scripts/

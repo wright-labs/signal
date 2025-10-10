@@ -90,6 +90,43 @@ print(f"Saved to: {artifact['checkpoint_path']}")
 
 Want a specific model? Contact us and we'll add it!
 
+## Automatic GPU Allocation
+
+Signal automatically allocates the right GPU resources based on the model you choose. **You never need to configure GPUs** - the system handles everything:
+
+### Single-GPU Training (Small Models)
+Models like Llama-3.2-3B automatically use single-GPU training with 8-bit quantization:
+- Efficient PEFT (Parameter-Efficient Fine-Tuning)
+- Fast iteration speed
+- Cost-effective for smaller models
+
+### Multi-GPU Training (Large Models)
+Models like Llama-3.1-70B automatically use multi-GPU training with FSDP (Fully Sharded Data Parallel):
+- Distributed across 4-8 GPUs
+- Uses Accelerate for efficient parallelism
+- Transparent to your training code
+- Same API primitives work seamlessly
+
+```python
+# Same code works for both single and multi-GPU!
+run = client.create_run(
+    base_model="meta-llama/Llama-3.1-70B",  # Automatically uses 4x A100
+    lora_r=32,
+)
+
+# Training loop is identical
+result = run.forward_backward(batch=batch)
+run.optim_step()
+```
+
+### GPU Configuration Reference
+
+See `config/models.yaml` for GPU allocations:
+- **Llama-3.2-1B/3B**: `l40s:1` (single L40S)
+- **Llama-3.1-8B**: `a100-80gb:1` (single A100)
+- **Llama-3.1-70B**: `a100-80gb:4` (4x A100 with FSDP)
+- **Qwen2.5-32B**: `a100-80gb:4` (4x A100 with FSDP)
+
 ## Custom LoRA Configuration
 
 ```python
@@ -188,9 +225,37 @@ Edit `config/models.yaml` to add or modify supported models:
 models:
   - name: "your-org/your-model"
     framework: "transformers"  # or "unsloth"
-    gpu: "a100-80gb:1"
+    gpu: "a100-80gb:4"  # Specify GPU type and count
     family: "llama"
 ```
+
+**GPU Configuration Format:**
+- Single GPU: `"l40s:1"`, `"a100-80gb:1"`, `"h100:1"`
+- Multi-GPU: `"a100-80gb:4"`, `"h100:8"`
+- The system automatically uses FSDP for multi-GPU setups
+
+### Technical Architecture
+
+**Training Infrastructure:**
+
+Signal uses a hybrid approach for maximum efficiency:
+
+- **Single-GPU (1 GPU)**: Direct PEFT with 8-bit quantization
+  - Faster for small models (1-8B parameters)
+  - Lower memory overhead
+  - Uses `bitsandbytes` for quantization
+
+- **Multi-GPU (2-8 GPUs)**: Accelerate with FSDP
+  - Required for large models (70B+ parameters)
+  - Fully Sharded Data Parallel across all GPUs
+  - Automatic model sharding and gradient synchronization
+  - Mixed precision (bfloat16) training
+
+**Modal GPU Allocation:**
+- GPU resources are allocated dynamically per run
+- Uses Modal's `with_options()` for runtime GPU selection
+- Each training primitive (`forward_backward`, `optim_step`) runs on the same GPU configuration
+- Inference always uses single GPU for efficiency
 
 **How It Works:**
 
