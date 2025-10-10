@@ -262,6 +262,69 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.post("/internal/mark-volume-cleaned")
+async def mark_volume_cleaned(
+    request: Request,
+    run_id: str = None,
+    user_id: str = None,
+    bytes_freed: int = None,
+):
+    """Internal endpoint for cleanup job to mark Modal Volume as cleaned.
+    
+    This endpoint is called by the cleanup job after deleting old run data
+    from Modal Volume. It updates the database to reflect that the volume
+    has been cleaned.
+    
+    Protected by internal service key for service-to-service auth.
+    """
+    # Check internal service key
+    internal_key = os.getenv("SIGNAL_INTERNAL_SECRET")
+    provided_key = request.headers.get("X-Internal-Key")
+    
+    if not internal_key or provided_key != internal_key:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing internal service key"
+        )
+    
+    # Parse request body if not provided as query params
+    if not run_id:
+        try:
+            body = await request.json()
+            run_id = body.get("run_id")
+            user_id = body.get("user_id")
+            bytes_freed = body.get("bytes_freed")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid request body")
+    
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    
+    try:
+        # Mark volume as cleaned in database
+        registry = RunRegistry()
+        success = registry.mark_volume_cleaned(
+            run_id=run_id,
+            bytes_freed=bytes_freed,
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "run_id": run_id,
+                "volume_cleaned": True,
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update database"
+            )
+    
+    except Exception as e:
+        logging.error(f"Error marking volume cleaned for run {run_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/models")
 async def list_models():
     """List supported models."""
@@ -540,10 +603,29 @@ async def save_state(
             training_metrics=None,  # Could fetch from registry if needed
         )
         
-        # TODO: Update run's last_access_time and s3_artifact_uri in database
-        # This would require adding support to RunRegistry or direct Supabase calls
+        # Update database with S3 artifact information
         if result.get("s3_uri"):
             logging.info(f"Artifact saved to S3: {result['s3_uri']}")
+            
+            # Record artifact in artifacts table
+            registry = RunRegistry()
+            artifact_recorded = registry.record_artifact(
+                run_id=run_id,
+                step=current_step,
+                mode=request.mode,
+                s3_uri=result["s3_uri"],
+                manifest=result.get("manifest", {}),
+                file_size_bytes=result.get("manifest", {}).get("total_size_bytes"),
+            )
+            
+            if artifact_recorded:
+                # Update run's S3 URI to point to latest artifact
+                registry.update_run_s3_uri(
+                    run_id=run_id,
+                    s3_uri=result["s3_uri"],
+                )
+            else:
+                logging.warning(f"Failed to record artifact in database for run {run_id}")
         
         return SaveStateResponse(
             artifact_uri=result["artifact_uri"],
@@ -589,29 +671,52 @@ async def get_run_artifacts(
         run = await get_authorized_run(run_id, user_id)
         
         # Query artifacts from database
-        # TODO: Implement artifacts table queries in registry
-        # For now, return basic info from run record
+        registry = RunRegistry()
+        artifacts_data = registry.get_run_artifacts(run_id)
+        
+        # Generate fresh signed URLs for each artifact
+        from datetime import datetime, timezone, timedelta
+        from modal_runtime.s3_client import generate_signed_url
         
         artifacts = []
-        if run.get("s3_artifact_uri"):
-            from datetime import datetime, timezone, timedelta
-            from modal_runtime.s3_client import generate_signed_url
-            
+        for artifact in artifacts_data:
             try:
-                # Generate fresh signed URL
-                download_url = generate_signed_url(run["s3_artifact_uri"], expiration=3600)
+                # Generate fresh signed URL (1 hour expiration)
+                download_url = generate_signed_url(artifact["s3_uri"], expiration=3600)
                 expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
                 
                 artifacts.append({
-                    "step": run["current_step"],
-                    "mode": "adapter",  # Default assumption
-                    "s3_uri": run["s3_artifact_uri"],
+                    "id": artifact.get("id"),
+                    "step": artifact["step"],
+                    "mode": artifact["mode"],
+                    "s3_uri": artifact["s3_uri"],
                     "download_url": download_url,
                     "download_expires_at": expires_at,
-                    "created_at": run.get("updated_at", run["created_at"]),
+                    "created_at": artifact.get("created_at"),
+                    "file_size_bytes": artifact.get("file_size_bytes"),
+                    "download_count": artifact.get("download_count", 0),
+                    "manifest": artifact.get("manifest", {}),
                 })
+                
+                # Track that this artifact was accessed (for download analytics)
+                # Note: We only increment download_count when actually downloading, not just listing
+                
             except Exception as e:
-                logging.error(f"Failed to generate signed URL: {e}")
+                logging.error(f"Failed to generate signed URL for artifact {artifact.get('id')}: {e}")
+                # Still include artifact but without download URL
+                artifacts.append({
+                    "id": artifact.get("id"),
+                    "step": artifact["step"],
+                    "mode": artifact["mode"],
+                    "s3_uri": artifact["s3_uri"],
+                    "download_url": None,
+                    "download_expires_at": None,
+                    "created_at": artifact.get("created_at"),
+                    "file_size_bytes": artifact.get("file_size_bytes"),
+                    "download_count": artifact.get("download_count", 0),
+                    "manifest": artifact.get("manifest", {}),
+                    "error": "Failed to generate signed URL",
+                })
         
         return {
             "run_id": run_id,

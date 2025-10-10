@@ -233,4 +233,159 @@ class RunRegistry:
             "run": run,
             "latest_metric": latest_metric
         }
+    
+    # =============================================================================
+    # ARTIFACT TRACKING (S3 Storage)
+    # =============================================================================
+    
+    def record_artifact(
+        self,
+        run_id: str,
+        step: int,
+        mode: str,
+        s3_uri: str,
+        manifest: Dict[str, Any],
+        file_size_bytes: Optional[int] = None,
+    ) -> bool:
+        """Record a saved artifact in the artifacts table.
+        
+        Args:
+            run_id: Run identifier
+            step: Training step number
+            mode: Artifact mode ('adapter', 'merged', 'state')
+            s3_uri: S3 URI for the artifact
+            manifest: Full manifest metadata dictionary
+            file_size_bytes: Total size of artifact in bytes
+            
+        Returns:
+            True if recorded successfully, False otherwise
+        """
+        try:
+            # Insert or update artifact record (UPSERT on run_id, step, mode)
+            self.supabase.table("artifacts").upsert({
+                "run_id": run_id,
+                "step": step,
+                "mode": mode,
+                "s3_uri": s3_uri,
+                "manifest": manifest,
+                "file_size_bytes": file_size_bytes,
+            }).execute()
+            
+            logger.info(f"Recorded artifact for run {run_id}, step {step}, mode {mode}")
+            return True
+        except Exception as e:
+            logger.error(f"Error recording artifact for run {run_id}: {e}")
+            return False
+    
+    def get_run_artifacts(self, run_id: str) -> List[Dict[str, Any]]:
+        """Get all artifacts for a run.
+        
+        Args:
+            run_id: Run identifier
+            
+        Returns:
+            List of artifact dictionaries, sorted by step (newest first)
+        """
+        try:
+            result = self.supabase.table("artifacts").select(
+                "*"
+            ).eq("run_id", run_id).order("step", desc=True).execute()
+            
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Error fetching artifacts for run {run_id}: {e}")
+            return []
+    
+    def update_artifact_download(
+        self,
+        run_id: str,
+        step: int,
+        mode: str,
+    ) -> bool:
+        """Track artifact download by incrementing download_count.
+        
+        Args:
+            run_id: Run identifier
+            step: Training step number
+            mode: Artifact mode
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            # Get current artifact
+            result = self.supabase.table("artifacts").select(
+                "download_count"
+            ).eq("run_id", run_id).eq("step", step).eq("mode", mode).single().execute()
+            
+            if not result.data:
+                logger.warning(f"Artifact not found: {run_id}/{step}/{mode}")
+                return False
+            
+            current_count = result.data.get("download_count", 0) or 0
+            
+            # Update download count and last_downloaded_at
+            from datetime import datetime, timezone
+            self.supabase.table("artifacts").update({
+                "download_count": current_count + 1,
+                "last_downloaded_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("run_id", run_id).eq("step", step).eq("mode", mode).execute()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error updating artifact download: {e}")
+            return False
+    
+    def update_run_s3_uri(
+        self,
+        run_id: str,
+        s3_uri: str,
+    ) -> bool:
+        """Update the run's latest S3 artifact URI.
+        
+        Args:
+            run_id: Run identifier
+            s3_uri: S3 URI for the latest artifact
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            from datetime import datetime, timezone
+            self.supabase.table("runs").update({
+                "s3_artifact_uri": s3_uri,
+                "last_access_time": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", run_id).execute()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error updating run S3 URI for {run_id}: {e}")
+            return False
+    
+    def mark_volume_cleaned(
+        self,
+        run_id: str,
+        bytes_freed: Optional[int] = None,
+    ) -> bool:
+        """Mark a run's Modal Volume data as cleaned up.
+        
+        Called by the cleanup job after deleting old run data from Modal Volume.
+        
+        Args:
+            run_id: Run identifier
+            bytes_freed: Number of bytes freed (optional, for logging)
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            self.supabase.table("runs").update({
+                "volume_cleaned": True,
+            }).eq("id", run_id).execute()
+            
+            logger.info(f"Marked volume cleaned for run {run_id} ({bytes_freed} bytes freed)")
+            return True
+        except Exception as e:
+            logger.error(f"Error marking volume cleaned for {run_id}: {e}")
+            return False
 

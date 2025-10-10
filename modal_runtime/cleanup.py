@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 import modal
 
-from modal_runtime.app import app, data_volume, VOLUME_CONFIG
+from modal_runtime.app import app, data_volume, VOLUME_CONFIG, api_secret
 
 
 def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any]]:
@@ -83,6 +83,7 @@ def delete_run_directory(run_path: str) -> int:
 @app.function(
     image=modal.Image.debian_slim().pip_install("requests"),
     volumes=VOLUME_CONFIG,
+    secrets=[api_secret],  # For SIGNAL_INTERNAL_SECRET and SIGNAL_API_URL
     schedule=modal.Period(days=1),  # Run daily
     timeout=3600,  # 1 hour timeout
 )
@@ -110,6 +111,11 @@ def cleanup_old_runs(
     # Get API URL from environment if not provided
     if api_url is None:
         api_url = os.environ.get("SIGNAL_API_URL")
+    
+    if api_url:
+        print(f"API URL configured: {api_url}")
+    else:
+        print("No API URL configured - database will not be updated")
     
     # Calculate cutoff date
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
@@ -172,6 +178,12 @@ def cleanup_old_runs(
                 try:
                     import requests
                     
+                    # Get internal service key from environment
+                    internal_key = os.environ.get("SIGNAL_INTERNAL_SECRET")
+                    headers = {}
+                    if internal_key:
+                        headers["X-Internal-Key"] = internal_key
+                    
                     response = requests.post(
                         f"{api_url}/internal/mark-volume-cleaned",
                         json={
@@ -179,6 +191,7 @@ def cleanup_old_runs(
                             "user_id": user_id,
                             "bytes_freed": bytes_freed,
                         },
+                        headers=headers,
                         timeout=10,
                     )
                     

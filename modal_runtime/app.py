@@ -32,6 +32,10 @@ huggingface_secret = Secret.from_name("secrets-hf-wandb")
 # AWS S3 credentials for artifact storage
 s3_secret = Secret.from_name("aws-s3-credentials")
 
+# API secrets for internal service-to-service communication
+# This should contain: SIGNAL_INTERNAL_SECRET, SIGNAL_API_URL
+api_secret = Secret.from_name("signal-api-secrets")
+
 # =============================================================================
 # DOCKER IMAGE CONFIGURATIONS
 # =============================================================================
