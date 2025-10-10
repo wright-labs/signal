@@ -224,34 +224,6 @@ Leave `FRONTIER_BACKEND_URL` empty to run Signal without credit management. All 
   └── checkpoints/          # Exported checkpoints
 ```
 
-## Security
-
-Signal implements **Row Level Security (RLS)** for database access, following the principle of least privilege.
-
-### Architecture
-
-Instead of using Supabase's service role key (which has unrestricted database access), Signal uses:
-
-- **Anon Key** with limited permissions
-- **RLS Policies** that automatically enforce user isolation
-- **Session Context** set after API key validation
-
-This means:
-
-✅ The API never has god-mode database access  
-✅ Even if compromised, attackers can only access what RLS allows  
-✅ All queries are automatically filtered by user context  
-✅ Defense in depth - multiple security layers
-
-### How It Works
-
-```
-1. Client sends API key in request
-2. API validates key (special RLS policy allows this)
-3. API sets user context: set_user_context(user_id)
-4. All subsequent queries filtered by RLS policies
-```
-
 ### For Self-Hosters
 
 When setting up your Supabase database:
@@ -261,14 +233,6 @@ When setting up your Supabase database:
 3. RLS policies automatically protect your data
 
 See [`supabase/SETUP.md`](supabase/SETUP.md) for detailed migration instructions.
-
-### Security Best Practices
-
-- ✅ Rotate API keys regularly
-- ✅ Enable rate limiting (`ENABLE_RATE_LIMITING=true`)
-- ✅ Monitor authentication failures in logs
-- ✅ Keep dependencies updated
-- ✅ Use HTTPS in production
 
 ## Quick Start
 
@@ -289,10 +253,6 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 # 4. Use the SDK
 ```
-
-### Deployment Guide
-
-For detailed production deployment instructions, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Contributing
 
