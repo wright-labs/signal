@@ -7,8 +7,8 @@ from collections import deque
 
 from .exceptions import (
     SignalAPIError,
-    SignalConnectionError,
-    SignalTimeoutError,
+    ConnectionError as SignalConnectionError,
+    TimeoutError as SignalTimeoutError,
 )
 
 

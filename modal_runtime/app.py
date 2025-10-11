@@ -82,6 +82,7 @@ TRAINING_IMAGE = (
             "wandb",                  # Experiment tracking
             "boto3",                  # AWS S3 for artifact storage
             "botocore",               # AWS core library
+            "hf_transfer",            # Fast HuggingFace downloads
         ]
     )
     # Set environment variables for optimization

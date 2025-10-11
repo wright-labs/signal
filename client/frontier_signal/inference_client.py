@@ -6,8 +6,8 @@ from typing import List, Dict, Any, Optional
 
 from .exceptions import (
     SignalAPIError,
-    SignalConnectionError,
-    SignalTimeoutError,
+    ConnectionError as SignalConnectionError,
+    TimeoutError as SignalTimeoutError,
 )
 
 
