@@ -1,5 +1,11 @@
 """Modal app definition with images and volumes.
 
+This module defines:
+- Modal app configuration
+- Docker images for training and inference
+- Persistent volumes for data storage
+- Secrets for API keys and credentials
+
 NOTE: All ML dependencies (torch, transformers, peft, etc.) are installed
 in the Modal Docker images below. They are NOT in requirements-api.txt since
 the API server only needs FastAPI and client libraries.
@@ -40,79 +46,67 @@ api_secret = Secret.from_name("signal-api-secrets")
 # DOCKER IMAGE CONFIGURATIONS
 # =============================================================================
 
+# CUDA configuration
 CUDA_VERSION = "12.8.1"
 CUDA_FLAVOR = "devel"
 CUDA_OS = "ubuntu24.04"
 CUDA_TAG = f"{CUDA_VERSION}-{CUDA_FLAVOR}-{CUDA_OS}"
 
-# Training image with PyTorch, Transformers, PEFT, Axolotl and multi-GPU support
-# Add modal_runtime as a local directory so it can be imported as a package
+# Training image with PyTorch, Transformers, PEFT for LoRA training
+# Streamlined to include only essential dependencies for transformers + PEFT
 TRAINING_IMAGE = (
     ModalImage.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
     .apt_install(
         "git",
         "build-essential",
     )
-    # Install PyTorch and core dependencies using uv for better performance
+    # Install PyTorch and core dependencies
     .uv_pip_install(
         [
             "torch",
-            "torchvision",
+            "torchvision", 
             "torchaudio",
         ]
     )
-    # Install build dependencies with uv (uv is available after uv_pip_install)
+    # Install transformers ecosystem and LoRA training dependencies
     .uv_pip_install(
         [
-            "packaging",
-            "setuptools",
-            "wheel",
-            "ninja",
+            "transformers",           # HuggingFace transformers
+            "peft",                   # Parameter-Efficient Fine-Tuning (LoRA)
+            "bitsandbytes",           # Quantization and 8-bit optimizer
+            "accelerate",             # Training utilities
+            "safetensors",            # Safe model serialization
+            "sentencepiece",          # Tokenization
+            "protobuf",               # Protocol buffers
+            "datasets",               # HuggingFace datasets
+            "wandb",                  # Experiment tracking
+            "boto3",                  # AWS S3 for artifact storage
+            "botocore",               # AWS core library
         ]
     )
-    # Install Axolotl with DeepSpeed for multi-GPU support  
-    # Note: Using pip directly as uv has issues with --no-build-isolation
-    .run_commands("pip install --no-build-isolation axolotl[deepspeed]")
-    # Install Unsloth for faster single-GPU training
-    .run_commands("pip install unsloth")
-    # Install flash-attention for efficient attention computation
-    .run_commands(
-        "pip install flash-attn --no-build-isolation"
-    )
-    # Additional dependencies for compatibility
-    .uv_pip_install(
-        [
-            "sentencepiece",
-            "protobuf",
-            "safetensors",
-            "pyyaml",
-            "wandb",
-            "requests",
-            "boto3",  # S3 storage
-            "botocore",
-        ]
-    )
+    # Set environment variables for optimization
     .env(
         {
-            "HF_HUB_ENABLE_HF_TRANSFER": "1",  # Enable faster HF downloads
-            "HF_HOME": "/data/.cache",
-            "PYTHONPATH": "/root",
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",  # Faster HF downloads
+            "HF_HOME": "/data/.cache",         # Cache models on volume
+            "PYTHONPATH": "/root",             # For local module imports
         }
     )
+    # Add modal_runtime as a local directory for imports
     .add_local_dir(
         local_path=Path(__file__).parent,
         remote_path="/root/modal_runtime",
     )
 )
 
-# Inference image - simplified to use same image as training
-# Using vLLM and flash-attn causes OOM during image build, so we use the training image
-# which already has transformers and can do inference just fine
+# Inference image - use same as training for simplicity
+# Previously tried vLLM but it caused OOM during build
+# The training image works fine for inference too
 INFERENCE_IMAGE = TRAINING_IMAGE
 
 # =============================================================================
 # IMPORT PRIMITIVES TO REGISTER FUNCTIONS
 # =============================================================================
 # This must be at the end after all images and secrets are defined
-import modal_runtime.primitives  # noqa: F401
-
+# Importing primitives registers the Modal functions with the app
+import modal_runtime.primitives  # noqa: F401, E402

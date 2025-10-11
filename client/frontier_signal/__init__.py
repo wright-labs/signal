@@ -5,6 +5,12 @@ from ._version import __version__
 # Sync client
 from .client import SignalClient, SignalRun
 
+# Specialized clients
+from .training_client import TrainingClient
+from .inference_client import InferenceClient
+from .async_training_client import AsyncTrainingClient
+from .async_inference_client import AsyncInferenceClient
+
 # Async client
 from .async_client import AsyncSignalClient, AsyncSignalRun
 
@@ -45,6 +51,11 @@ __all__ = [
     # Sync client
     "SignalClient",
     "SignalRun",
+    # Specialized clients
+    "TrainingClient",
+    "InferenceClient",
+    "AsyncTrainingClient",
+    "AsyncInferenceClient",
     # Async client
     "AsyncSignalClient",
     "AsyncSignalRun",

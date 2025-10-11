@@ -25,6 +25,8 @@ from .exceptions import (
     ConnectionError as SignalConnectionError,
     TimeoutError as SignalTimeoutError,
 )
+from .training_client import TrainingClient
+from .inference_client import InferenceClient
 
 
 class SignalRun:
@@ -152,6 +154,38 @@ class SignalRun:
             Run metrics
         """
         return self.client.get_run_metrics(self.run_id)
+    
+    def training(self, **kwargs) -> "TrainingClient":
+        """Get specialized training client for this run.
+        
+        Args:
+            **kwargs: Additional training client configuration
+            
+        Returns:
+            TrainingClient instance for advanced training operations
+            
+        Example:
+            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
+            >>> training = run.training(timeout=7200)
+            >>> training.train_batch(batch_data)
+        """
+        return self.client.training(self.run_id, **kwargs)
+    
+    def inference(self, **kwargs) -> "InferenceClient":
+        """Get specialized inference client for this run.
+        
+        Args:
+            **kwargs: Additional inference client configuration
+            
+        Returns:
+            InferenceClient instance for advanced inference operations
+            
+        Example:
+            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
+            >>> inference = run.inference(step=100)
+            >>> outputs = inference.sample(["Hello world"])
+        """
+        return self.client.inference(self.run_id, **kwargs)
 
 
 class SignalClient:
@@ -336,6 +370,8 @@ class SignalClient:
     ) -> Dict[str, Any]:
         """Perform forward-backward pass.
         
+        Delegates to TrainingClient internally.
+        
         Args:
             run_id: Run identifier
             batch: List of training examples
@@ -346,17 +382,13 @@ class SignalClient:
         Returns:
             Response with loss and gradient stats
         """
-        if loss_kwargs is None:
-            loss_kwargs = {}
-            
-        payload = {
-            "batch_data": batch,
-            "accumulate": accumulate,
-            "loss_fn": loss_fn,
-            "loss_kwargs": loss_kwargs,
-        }
-        
-        return self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
+        training = self.training(run_id)
+        return training.forward_backward(
+            batch_data=batch,
+            accumulate=accumulate,
+            loss_fn=loss_fn,
+            loss_kwargs=loss_kwargs,
+        )
     
     def optim_step(
         self,
@@ -365,6 +397,8 @@ class SignalClient:
     ) -> Dict[str, Any]:
         """Apply optimizer step.
         
+        Delegates to TrainingClient internally.
+        
         Args:
             run_id: Run identifier
             learning_rate: Optional learning rate override
@@ -372,11 +406,8 @@ class SignalClient:
         Returns:
             Response with step metrics
         """
-        payload = {
-            "learning_rate": learning_rate,
-        }
-        
-        return self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
+        training = self.training(run_id)
+        return training.optim_step(learning_rate=learning_rate)
     
     def sample(
         self,
@@ -386,8 +417,10 @@ class SignalClient:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> List[str]:
         """Generate samples.
+        
+        Delegates to InferenceClient internally.
         
         Args:
             run_id: Run identifier
@@ -398,17 +431,16 @@ class SignalClient:
             return_logprobs: Whether to return log probabilities
             
         Returns:
-            Response with generated outputs
+            List of generated texts
         """
-        payload = {
-            "prompts": prompts,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "return_logprobs": return_logprobs,
-        }
-        
-        return self._request("POST", f"/runs/{run_id}/sample", json=payload)
+        inference = self.inference(run_id)
+        return inference.sample(
+            prompts=prompts,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            return_logprobs=return_logprobs,
+        )
     
     def save_state(
         self,
@@ -419,6 +451,8 @@ class SignalClient:
     ) -> Dict[str, Any]:
         """Save model state.
         
+        Delegates to TrainingClient internally.
+        
         Args:
             run_id: Run identifier
             mode: Save mode ('adapter' or 'merged')
@@ -428,13 +462,12 @@ class SignalClient:
         Returns:
             Response with artifact information
         """
-        payload = {
-            "mode": mode,
-            "push_to_hub": push_to_hub,
-            "hub_model_id": hub_model_id,
-        }
-        
-        return self._request("POST", f"/runs/{run_id}/save_state", json=payload)
+        training = self.training(run_id)
+        return training.save_checkpoint(
+            mode=mode,
+            push_to_hub=push_to_hub,
+            hub_model_id=hub_model_id,
+        )
     
     def get_run_status(self, run_id: str) -> Dict[str, Any]:
         """Get run status.
@@ -466,3 +499,90 @@ class SignalClient:
         """
         response = self._request("GET", "/runs")
         return response["runs"]
+    
+    def training(
+        self,
+        run_id: str,
+        timeout: int = 3600,
+        max_retries: int = 3,
+        **kwargs
+    ) -> TrainingClient:
+        """Get specialized training client for a run.
+        
+        Args:
+            run_id: Run identifier
+            timeout: Request timeout for training operations (default: 3600s)
+            max_retries: Number of retries for failed requests (default: 3)
+            **kwargs: Additional training client configuration
+            
+        Returns:
+            TrainingClient instance with training-optimized settings
+            
+        Example:
+            >>> client = SignalClient(api_key="sk-...")
+            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
+            >>> training = client.training(run.run_id, timeout=7200)
+            >>> 
+            >>> # Fine-grained control over training
+            >>> for batch in dataloader:
+            >>>     result = training.forward_backward(batch)
+            >>>     if result['grad_norm'] < 100:
+            >>>         training.optim_step()
+            >>> 
+            >>> # Or use convenience method
+            >>> training.train_batch(batch)
+        """
+        return TrainingClient(
+            run_id=run_id,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            session=self.session,  # Share session for connection pooling
+            **kwargs
+        )
+    
+    def inference(
+        self,
+        run_id: str,
+        step: Optional[int] = None,
+        timeout: int = 30,
+        batch_size: int = 1,
+        **kwargs
+    ) -> InferenceClient:
+        """Get specialized inference client for a run.
+        
+        Args:
+            run_id: Run identifier
+            step: Checkpoint step to use (latest if None)
+            timeout: Request timeout for inference operations (default: 30s)
+            batch_size: Batch size for inference (default: 1)
+            **kwargs: Additional inference client configuration
+            
+        Returns:
+            InferenceClient instance with inference-optimized settings
+            
+        Example:
+            >>> client = SignalClient(api_key="sk-...")
+            >>> inference = client.inference(
+            ...     run_id="run_123",
+            ...     step=100,
+            ...     batch_size=32
+            ... )
+            >>> 
+            >>> # Optimized batched inference
+            >>> outputs = inference.batch_sample(
+            ...     prompts=["Hello", "World", ...],
+            ...     max_tokens=50
+            ... )
+        """
+        return InferenceClient(
+            run_id=run_id,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            step=step,
+            timeout=timeout,
+            batch_size=batch_size,
+            session=self.session,  # Share session for connection pooling
+            **kwargs
+        )

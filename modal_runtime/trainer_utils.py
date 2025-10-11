@@ -1,4 +1,11 @@
-"""Training utilities for model training."""
+"""Training utilities for model training.
+
+This module provides utilities for:
+- Setting up optimizers (AdamW, 8-bit AdamW)
+- Tokenizing batches for training
+- Computing forward/backward passes with various loss functions
+- Saving/loading checkpoints, gradients, and optimizer states
+"""
 import os
 import torch
 from pathlib import Path
@@ -16,19 +23,23 @@ def setup_optimizer(
     
     Args:
         model: Model to optimize
-        optimizer_type: Type of optimizer
+        optimizer_type: Type of optimizer ('adamw' or 'adamw_8bit')
         learning_rate: Learning rate
-        weight_decay: Weight decay
+        weight_decay: Weight decay for regularization
         
     Returns:
         Optimizer instance
     """
-    import bitsandbytes as bnb
-    
-    # Get trainable parameters
+    # Get trainable parameters (only LoRA adapters should be trainable)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     
+    print(f"Setting up {optimizer_type} optimizer...")
+    print(f"  - Learning rate: {learning_rate}")
+    print(f"  - Weight decay: {weight_decay}")
+    print(f"  - Trainable params: {len(trainable_params)}")
+    
     if optimizer_type == "adamw_8bit":
+        import bitsandbytes as bnb
         optimizer = bnb.optim.AdamW8bit(
             trainable_params,
             lr=learning_rate,
@@ -41,7 +52,7 @@ def setup_optimizer(
             weight_decay=weight_decay,
         )
     else:
-        raise ValueError(f"Unsupported optimizer: {optimizer_type}")
+        raise ValueError(f"Unsupported optimizer: {optimizer_type}. Use 'adamw' or 'adamw_8bit'")
     
     return optimizer
 
@@ -60,6 +71,7 @@ def save_optimizer_state(
     save_path.parent.mkdir(parents=True, exist_ok=True)
     
     torch.save(optimizer.state_dict(), save_path)
+    print(f"✓ Optimizer state saved to {save_path}")
 
 
 def load_optimizer_state(
@@ -83,6 +95,7 @@ def load_optimizer_state(
     state_dict = torch.load(load_path, map_location="cpu")
     optimizer.load_state_dict(state_dict)
     
+    print(f"✓ Optimizer state loaded from {load_path}")
     return optimizer
 
 
@@ -95,27 +108,31 @@ def tokenize_batch(
     """Tokenize a batch of data.
     
     Args:
-        batch_data: List of examples with 'text', 'messages', or preference pairs
+        batch_data: List of examples with 'text' or 'messages' fields
         tokenizer: Tokenizer instance
         max_seq_length: Maximum sequence length
-        loss_fn: Loss function being used (affects tokenization)
+        loss_fn: Loss function being used (affects tokenization for DPO)
         
     Returns:
-        Tokenized batch
+        Tokenized batch with input_ids, attention_mask, labels
     """
-    # Handle preference pairs for DPO/reward modeling
-    if loss_fn in ["dpo", "reward_modeling"]:
+    # Handle preference pairs for DPO
+    if loss_fn == "dpo":
         # Check if batch is preference pairs (has 'prompt', 'chosen', 'rejected')
         if batch_data and all('prompt' in ex and 'chosen' in ex and 'rejected' in ex 
                               for ex in batch_data):
-            from modal_runtime.preference_utils import format_preference_pairs_for_dpo
-            return format_preference_pairs_for_dpo(
-                preference_pairs=batch_data,
-                tokenizer=tokenizer,
-                max_seq_length=max_seq_length,
-            )
+            # Import DPO utilities if needed
+            try:
+                from modal_runtime.preference_utils import format_preference_pairs_for_dpo
+                return format_preference_pairs_for_dpo(
+                    preference_pairs=batch_data,
+                    tokenizer=tokenizer,
+                    max_seq_length=max_seq_length,
+                )
+            except ImportError:
+                print("Warning: DPO utilities not available, falling back to standard tokenization")
     
-    # Standard tokenization for causal LM, PPO, etc.
+    # Standard tokenization for causal LM
     texts = []
     
     for example in batch_data:
@@ -153,15 +170,21 @@ def compute_forward_backward(
 ) -> Tuple[float, Dict[str, float]]:
     """Compute forward and backward pass with custom loss function.
     
+    This function:
+    1. Moves batch to model device
+    2. Computes loss using specified loss function
+    3. Performs backward pass to compute gradients
+    4. Collects gradient statistics
+    
     Args:
         model: Model instance
         batch: Tokenized batch
-        accumulate: Whether to accumulate gradients
-        loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
+        accumulate: Whether to accumulate gradients (don't zero_grad)
+        loss_fn: Loss function to use (causal_lm, dpo, etc.)
         loss_kwargs: Additional arguments for loss function
         
     Returns:
-        Tuple of (loss, metrics_dict including gradient_stats)
+        Tuple of (loss_value, metrics_dict with gradient_stats)
     """
     from modal_runtime.loss_functions import compute_loss
     
@@ -173,8 +196,24 @@ def compute_forward_backward(
     batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
              for k, v in batch.items()}
     
+    # Verify we have trainable parameters
+    trainable_params = [(name, param) for name, param in model.named_parameters() if param.requires_grad]
+    if len(trainable_params) == 0:
+        raise RuntimeError(
+            "No trainable parameters found! Cannot compute gradients. "
+            "This usually means LoRA adapters were not applied correctly."
+        )
+    
     # Compute loss using specified loss function
     loss, loss_metrics = compute_loss(model, batch, loss_fn=loss_fn, **loss_kwargs)
+    
+    # Verify loss requires grad
+    if not loss.requires_grad:
+        raise RuntimeError(
+            f"Loss does not require grad! This means gradient flow is broken. "
+            f"Loss tensor: {loss}, requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}. "
+            f"This is likely due to missing prepare_model_for_kbit_training() for quantized models."
+        )
     
     # Backward pass
     loss.backward()
@@ -182,18 +221,35 @@ def compute_forward_backward(
     # Compute gradient statistics
     grad_norms = []
     grad_values = []
+    params_with_grad = 0
     
     for name, param in model.named_parameters():
         if param.grad is not None:
-            grad_norms.append(param.grad.norm().item())
-            grad_values.extend(param.grad.flatten().tolist())
+            params_with_grad += 1
+            grad_norm = param.grad.norm().item()
+            grad_norms.append(grad_norm)
+            # Only collect sample values to avoid memory issues
+            if len(grad_values) < 1000:
+                grad_values.extend(param.grad.flatten().tolist()[:100])
+    
+    if params_with_grad == 0:
+        raise RuntimeError(
+            "Backward pass completed but no parameters have gradients! "
+            "This should never happen after loss.backward(). Check model setup."
+        )
+    
+    # Calculate gradient statistics
+    total_grad_norm = sum(n**2 for n in grad_norms) ** 0.5  # L2 norm
     
     grad_stats = {
-        "grad_norm": sum(grad_norms) if grad_norms else 0.0,
+        "grad_norm": total_grad_norm,
         "grad_max": max(grad_values) if grad_values else 0.0,
         "grad_min": min(grad_values) if grad_values else 0.0,
         "grad_mean": sum(grad_values) / len(grad_values) if grad_values else 0.0,
+        "params_with_grad": params_with_grad,
     }
+    
+    print(f"Forward-backward complete: loss={loss.item():.4f}, grad_norm={total_grad_norm:.4f}")
     
     # Merge loss metrics and gradient stats
     all_metrics = {**loss_metrics, **grad_stats}
@@ -207,6 +263,9 @@ def save_gradients(
 ):
     """Save model gradients to disk.
     
+    This is useful for the distributed training API where gradient computation
+    and optimizer updates happen in separate function calls.
+    
     Args:
         model: Model instance
         save_path: Path to save gradients
@@ -219,7 +278,11 @@ def save_gradients(
         if param.grad is not None:
             gradients[name] = param.grad.cpu()
     
+    if len(gradients) == 0:
+        raise RuntimeError("No gradients to save! Call backward() first.")
+    
     torch.save(gradients, save_path)
+    print(f"✓ Saved {len(gradients)} gradient tensors to {save_path}")
 
 
 def load_gradients(
@@ -239,12 +302,16 @@ def load_gradients(
     
     gradients = torch.load(load_path, map_location="cpu")
     
+    loaded_count = 0
     for name, param in model.named_parameters():
         if name in gradients:
             if param.grad is None:
                 param.grad = gradients[name].to(param.device)
             else:
                 param.grad.add_(gradients[name].to(param.device))
+            loaded_count += 1
+    
+    print(f"✓ Loaded {loaded_count} gradient tensors from {load_path}")
 
 
 def save_lora_checkpoint(
@@ -268,6 +335,8 @@ def save_lora_checkpoint(
     # Save tokenizer if provided
     if tokenizer is not None:
         tokenizer.save_pretrained(save_path)
+    
+    print(f"✓ LoRA checkpoint saved to {save_path}")
 
 
 def save_merged_model(
@@ -281,35 +350,29 @@ def save_merged_model(
     
     Args:
         model: Model with LoRA adapters
-        base_model_name: Base model name
+        base_model_name: Base model name (for reference)
         save_path: Path to save merged model
         tokenizer: Optional tokenizer to save
-        framework: Framework used
+        framework: Framework used (currently only 'transformers' supported)
     """
+    from peft import PeftModel
+    
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     
-    if framework == "unsloth":
-        from unsloth import FastLanguageModel
-        # Unsloth has special merge method
-        model.save_pretrained_merged(
-            str(save_path),
-            tokenizer,
-            save_method="merged_16bit",
-        )
-    else:
-        # For PEFT, merge and save
-        from peft import PeftModel
-        
-        # Merge LoRA weights into base model
-        merged_model = model.merge_and_unload()
-        
-        # Save merged model
-        merged_model.save_pretrained(save_path)
-        
-        # Save tokenizer if provided
-        if tokenizer is not None:
-            tokenizer.save_pretrained(save_path)
+    print(f"Merging LoRA weights with base model...")
+    
+    # Merge LoRA weights into base model
+    merged_model = model.merge_and_unload()
+    
+    # Save merged model
+    merged_model.save_pretrained(save_path)
+    
+    # Save tokenizer if provided
+    if tokenizer is not None:
+        tokenizer.save_pretrained(save_path)
+    
+    print(f"✓ Merged model saved to {save_path}")
 
 
 def get_run_paths(user_id: str, run_id: str, base_path: str = "/data") -> Dict[str, Path]:
@@ -318,10 +381,10 @@ def get_run_paths(user_id: str, run_id: str, base_path: str = "/data") -> Dict[s
     Args:
         user_id: User identifier
         run_id: Run identifier
-        base_path: Base storage path
+        base_path: Base storage path (default: /data on Modal)
         
     Returns:
-        Dictionary of paths
+        Dictionary of paths for various run artifacts
     """
     base = Path(base_path) / "runs" / user_id / run_id
     
@@ -357,6 +420,8 @@ def save_run_config(
     
     with open(paths["config"], "w") as f:
         json.dump(config, f, indent=2)
+    
+    print(f"✓ Run config saved to {paths['config']}")
 
 
 def load_run_config(
@@ -380,10 +445,15 @@ def load_run_config(
         raise FileNotFoundError(f"Run config not found: {paths['config']}")
     
     with open(paths["config"], "r") as f:
-        return json.load(f)
+        config = json.load(f)
+    
+    return config
 
 
-def find_latest_checkpoint(lora_adapters_path: Path, target_step: Optional[int] = None) -> Optional[Path]:
+def find_latest_checkpoint(
+    lora_adapters_path: Path,
+    target_step: Optional[int] = None,
+) -> Optional[Path]:
     """Find the latest or target checkpoint.
     
     Args:
@@ -397,11 +467,15 @@ def find_latest_checkpoint(lora_adapters_path: Path, target_step: Optional[int] 
         checkpoint_path = lora_adapters_path / f"step_{target_step}"
         if checkpoint_path.exists():
             return checkpoint_path
+        return None
     
     # Find the most recent checkpoint
-    checkpoints = sorted(lora_adapters_path.glob("step_*"))
+    checkpoints = sorted(
+        lora_adapters_path.glob("step_*"),
+        key=lambda p: int(p.name.split("_")[1]) if p.name.split("_")[1].isdigit() else 0
+    )
+    
     if checkpoints:
         return checkpoints[-1]
     
     return None
-

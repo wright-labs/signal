@@ -118,10 +118,12 @@ with SignalClient(api_key="sk-...") as client:
 ## Features
 
 - **Sync & Async Support** - Use `SignalClient` for synchronous code or `AsyncSignalClient` for async/await
+- **Progressive API** - Simple API for beginners, advanced specialized clients for production
 - **Type Hints** - Full type annotations for better IDE support and type checking
 - **Custom Exceptions** - Specific exceptions for different error types (auth, rate limits, etc.)
 - **Context Managers** - Automatic resource cleanup with context managers
 - **Pydantic Models** - Request/response validation with Pydantic schemas
+- **Specialized Clients** - Separate TrainingClient and InferenceClient for advanced use cases
 
 ## API Reference
 
@@ -261,6 +263,110 @@ models = client.list_models()
 # List all runs
 runs = client.list_runs()
 ```
+
+## API Levels
+
+The SDK provides **three levels of API** to match your expertise and needs:
+
+### Level 1: Simple API (Recommended for Beginners)
+
+The simple API provides direct methods on the client for common operations:
+
+```python
+from frontier_signal import SignalClient
+
+client = SignalClient(api_key="sk-...")
+run = client.create_run(base_model="Qwen/Qwen2.5-3B")
+
+# Direct training calls
+client.forward_backward(run.run_id, batch)
+client.optim_step(run.run_id)
+client.sample(run.run_id, prompts)
+```
+
+### Level 2: Advanced Training API
+
+For production training, use the specialized `TrainingClient`:
+
+```python
+from frontier_signal import SignalClient
+
+client = SignalClient(api_key="sk-...")
+run = client.create_run(base_model="Qwen/Qwen2.5-3B")
+
+# Get specialized training client
+training = client.training(
+    run_id=run.run_id,
+    timeout=7200,  # 2 hours for long training
+    max_retries=3,
+)
+
+# Fine-grained control
+for batch in dataloader:
+    result = training.forward_backward(batch)
+    
+    # Conditional optimizer step (e.g., gradient clipping)
+    if result['grad_norm'] < 10.0:
+        training.optim_step()
+
+# Convenience methods
+training.train_batch(batch)  # forward_backward + optim_step
+training.train_epoch(dataloader, progress=True)  # Full epoch with progress bar
+
+# State tracking
+metrics = training.get_metrics()
+print(f"Average loss: {metrics['avg_loss']:.4f}")
+
+# Save checkpoint
+training.save_checkpoint(mode="adapter")
+```
+
+**Features:**
+- Training-optimized defaults (1 hour timeout, exponential backoff)
+- State tracking (loss history, gradient norms)
+- Convenience methods (train_batch, train_epoch)
+- Context manager support
+
+### Level 3: Advanced Inference API
+
+For production inference, use the specialized `InferenceClient`:
+
+```python
+from frontier_signal import SignalClient
+
+client = SignalClient(api_key="sk-...")
+
+# Get specialized inference client
+inference = client.inference(
+    run_id="run_123",
+    step=100,  # Use specific checkpoint
+    batch_size=32,  # Batch size for inference
+    timeout=30,
+)
+
+# Batched generation (automatic chunking)
+prompts = ["Hello"] * 100
+outputs = inference.batch_sample(
+    prompts=prompts,
+    max_tokens=50,
+)
+
+# Enable caching for repeated prompts
+inference.enable_cache()
+outputs = inference.sample(["Same prompt"], max_tokens=50)  # Cached on repeat
+
+# Compare different checkpoints
+inference_early = client.inference(run_id, step=10)
+inference_late = client.inference(run_id, step=1000)
+```
+
+**Features:**
+- Inference-optimized defaults (30s timeout, immediate retry)
+- Automatic batching for efficiency
+- Response caching
+- Future: streaming, embeddings
+
+**📚 For detailed examples and comparisons, see [HYBRID_CLIENT_GUIDE.md](HYBRID_CLIENT_GUIDE.md)**
 
 ## Advanced Usage
 
@@ -404,6 +510,12 @@ python -m twine upload dist/*
 See the [examples/](examples/) directory for more usage examples:
 - `basic_sync.py` - Synchronous client example
 - `basic_async.py` - Asynchronous client example
+- `advanced_training.py` - Advanced training with TrainingClient
+- `advanced_inference.py` - Advanced inference with InferenceClient
+
+## Guides
+
+- **[Hybrid Client Guide](HYBRID_CLIENT_GUIDE.md)** - Complete guide to all three API levels with examples
 
 ## Support
 

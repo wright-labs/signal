@@ -1,77 +1,58 @@
-"""Model loading utilities for different frameworks."""
+"""Model loading utilities for transformers + PEFT.
+
+This module provides utilities for loading models with LoRA adapters
+using the Hugging Face transformers and PEFT libraries.
+
+Key features:
+- Supports quantized models (8-bit/4-bit) for memory efficiency
+- Applies LoRA adapters for parameter-efficient fine-tuning
+- Fixes gradient flow for quantized models with prepare_model_for_kbit_training()
+"""
 import os
 import torch
 from pathlib import Path
-from typing import Tuple, Optional, Any
+from typing import Tuple, Optional, Any, List
 
 
 def load_model_and_tokenizer(
     model_name: str,
-    framework: str = "transformers",
-    load_in_8bit: bool = True,
+    load_in_8bit: bool = False,
     load_in_4bit: bool = False,
     max_seq_length: int = 2048,
     bf16: bool = True,
     gradient_checkpointing: bool = True,
 ) -> Tuple[Any, Any]:
-    """Load model and tokenizer based on framework.
+    """Load model and tokenizer for training.
+    
+    This function loads a causal language model for LoRA fine-tuning.
+    
+    By default uses full precision LoRA (bf16/fp16). Set load_in_4bit=True or
+    load_in_8bit=True for QLoRA (quantized LoRA) to save memory.
     
     Args:
-        model_name: HuggingFace model ID
-        framework: Framework to use ('transformers' or 'unsloth')
-        load_in_8bit: Use 8-bit quantization
-        load_in_4bit: Use 4-bit quantization
+        model_name: HuggingFace model ID (e.g., 'Qwen/Qwen2.5-3B')
+        load_in_8bit: Use 8-bit quantization for QLoRA (reduces memory)
+        load_in_4bit: Use 4-bit quantization for QLoRA (reduces memory more)
         max_seq_length: Maximum sequence length
-        bf16: Use bfloat16 precision
-        gradient_checkpointing: Enable gradient checkpointing
-        
-    Returns:
-        Tuple of (model, tokenizer/processor)
-    """
-    os.environ["HF_TOKEN"] = os.environ.get("HUGGINGFACE_TOKEN", "")
-    
-    if framework == "unsloth":
-        return _load_unsloth_model(
-            model_name=model_name,
-            load_in_4bit=load_in_4bit,
-            max_seq_length=max_seq_length,
-            bf16=bf16,
-            gradient_checkpointing=gradient_checkpointing,
-        )
-    else:
-        return _load_transformers_model(
-            model_name=model_name,
-            load_in_8bit=load_in_8bit,
-            load_in_4bit=load_in_4bit,
-            bf16=bf16,
-            gradient_checkpointing=gradient_checkpointing,
-        )
-
-
-def _load_transformers_model(
-    model_name: str,
-    load_in_8bit: bool = True,
-    load_in_4bit: bool = False,
-    bf16: bool = True,
-    gradient_checkpointing: bool = True,
-) -> Tuple[Any, Any]:
-    """Load model using Transformers library.
-    
-    Args:
-        model_name: HuggingFace model ID
-        load_in_8bit: Use 8-bit quantization
-        load_in_4bit: Use 4-bit quantization
-        bf16: Use bfloat16 precision
-        gradient_checkpointing: Enable gradient checkpointing
+        bf16: Use bfloat16 precision (recommended for modern GPUs)
+        gradient_checkpointing: Enable gradient checkpointing (trades compute for memory)
         
     Returns:
         Tuple of (model, tokenizer)
+        
+    Note:
+        - Default: Full precision LoRA (better quality, more memory)
+        - QLoRA: Set load_in_4bit=True (good quality, less memory)
     """
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
         BitsAndBytesConfig,
     )
+    from peft import prepare_model_for_kbit_training
+    
+    # Set HuggingFace token if available
+    os.environ["HF_TOKEN"] = os.environ.get("HUGGINGFACE_TOKEN", "")
     
     # Configure quantization
     quantization_config = None
@@ -88,6 +69,7 @@ def _load_transformers_model(
         )
     
     # Load tokenizer
+    print(f"Loading tokenizer for {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -96,8 +78,17 @@ def _load_transformers_model(
     # Ensure tokenizer has pad token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     
     # Load model
+    print(f"Loading model {model_name}...")
+    if quantization_config is not None:
+        print(f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)")
+    else:
+        print(f"  - Mode: LoRA (full precision)")
+    print(f"  - Precision: {'bfloat16' if bf16 else 'float16'}")
+    print(f"  - Gradient checkpointing: {gradient_checkpointing}")
+    
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=quantization_config,
@@ -106,98 +97,39 @@ def _load_transformers_model(
         trust_remote_code=True,
     )
     
-    # Enable gradient checkpointing
-    if gradient_checkpointing:
-        model.gradient_checkpointing_enable()
+    # CRITICAL: Prepare model based on quantization
+    if quantization_config is not None:
+        # QLoRA path: Need special preparation for gradient flow through quantized layers
+        print("Preparing model for k-bit training (QLoRA)...")
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=gradient_checkpointing,
+        )
+    else:
+        # LoRA path: Standard gradient checkpointing if requested
+        if gradient_checkpointing:
+            print("Enabling gradient checkpointing...")
+            model.gradient_checkpointing_enable()
     
-    return model, tokenizer
-
-
-def _load_unsloth_model(
-    model_name: str,
-    load_in_4bit: bool = False,
-    max_seq_length: int = 2048,
-    bf16: bool = True,
-    gradient_checkpointing: bool = True,
-) -> Tuple[Any, Any]:
-    """Load model using Unsloth library.
-    
-    Args:
-        model_name: HuggingFace model ID or Unsloth model ID
-        load_in_4bit: Use 4-bit quantization
-        max_seq_length: Maximum sequence length
-        bf16: Use bfloat16 precision
-        gradient_checkpointing: Enable gradient checkpointing
-        
-    Returns:
-        Tuple of (model, tokenizer)
-    """
-    from unsloth import FastLanguageModel
-    
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=model_name,
-        max_seq_length=max_seq_length,
-        dtype=torch.bfloat16 if bf16 else torch.float16,
-        load_in_4bit=load_in_4bit,
-        use_gradient_checkpointing="unsloth" if gradient_checkpointing else False,
-    )
-    
+    print(f"✓ Model loaded successfully")
     return model, tokenizer
 
 
 def apply_lora_to_model(
     model: Any,
-    framework: str = "transformers",
     lora_r: int = 32,
     lora_alpha: int = 64,
     lora_dropout: float = 0.0,
-    lora_target_modules: Optional[list] = None,
+    lora_target_modules: Optional[List[str]] = None,
 ) -> Any:
     """Apply LoRA adapters to a model.
     
     Args:
         model: Base model
-        framework: Framework used ('transformers' or 'unsloth')
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha
-        lora_dropout: LoRA dropout
-        lora_target_modules: Target modules for LoRA
-        
-    Returns:
-        Model with LoRA adapters
-    """
-    if framework == "unsloth":
-        return _apply_lora_unsloth(
-            model=model,
-            lora_r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-        )
-    else:
-        return _apply_lora_peft(
-            model=model,
-            lora_r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            lora_target_modules=lora_target_modules,
-        )
-
-
-def _apply_lora_peft(
-    model: Any,
-    lora_r: int = 32,
-    lora_alpha: int = 64,
-    lora_dropout: float = 0.0,
-    lora_target_modules: Optional[list] = None,
-) -> Any:
-    """Apply LoRA using PEFT library.
-    
-    Args:
-        model: Base model
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha
-        lora_dropout: LoRA dropout
-        lora_target_modules: Target modules for LoRA
+        lora_r: LoRA rank (dimension of low-rank matrices)
+        lora_alpha: LoRA scaling factor (alpha/r is the effective learning rate multiplier)
+        lora_dropout: LoRA dropout rate
+        lora_target_modules: Target modules for LoRA (if None, uses common defaults)
         
     Returns:
         Model with LoRA adapters
@@ -205,8 +137,20 @@ def _apply_lora_peft(
     from peft import LoraConfig, get_peft_model, TaskType
     
     # Default target modules if not specified
+    # These are common attention/MLP projection layers in transformer models
     if lora_target_modules is None:
-        lora_target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        lora_target_modules = [
+            "q_proj",      # Query projection
+            "k_proj",      # Key projection
+            "v_proj",      # Value projection
+            "o_proj",      # Output projection
+            "gate_proj",   # MLP gate (for gated architectures like Llama)
+            "up_proj",     # MLP up projection
+            "down_proj",   # MLP down projection
+        ]
+    
+    print(f"Applying LoRA adapters (r={lora_r}, alpha={lora_alpha})...")
+    print(f"  - Target modules: {', '.join(lora_target_modules)}")
     
     lora_config = LoraConfig(
         r=lora_r,
@@ -218,40 +162,20 @@ def _apply_lora_peft(
     )
     
     model = get_peft_model(model, lora_config)
+    
+    # Print trainable parameters for verification
+    print("\nTrainable parameters:")
     model.print_trainable_parameters()
     
-    return model
-
-
-def _apply_lora_unsloth(
-    model: Any,
-    lora_r: int = 32,
-    lora_alpha: int = 64,
-    lora_dropout: float = 0.0,
-) -> Any:
-    """Apply LoRA using Unsloth library.
+    # Verify gradient flow is enabled
+    trainable_params = [name for name, param in model.named_parameters() if param.requires_grad]
+    if len(trainable_params) == 0:
+        raise RuntimeError(
+            "No trainable parameters found after applying LoRA! "
+            "This should never happen. Check LoRA configuration."
+        )
     
-    Args:
-        model: Base model
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha
-        lora_dropout: LoRA dropout
-        
-    Returns:
-        Model with LoRA adapters
-    """
-    from unsloth import FastLanguageModel
-    
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=lora_r,
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    )
+    print(f"✓ LoRA adapters applied successfully ({len(trainable_params)} trainable params)")
     
     return model
 
@@ -264,26 +188,62 @@ def load_lora_checkpoint(
     
     Args:
         model: Model with LoRA adapters
-        checkpoint_path: Path to LoRA checkpoint
+        checkpoint_path: Path to LoRA checkpoint directory
         
     Returns:
         Model with loaded checkpoint
     """
+    from peft import PeftModel
+    
     checkpoint_path = Path(checkpoint_path)
     
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     
-    # Load adapter weights
-    from peft import PeftModel
+    print(f"Loading LoRA checkpoint from {checkpoint_path}...")
     
-    try:
-        # Try loading as PEFT model
-        model = PeftModel.from_pretrained(model, str(checkpoint_path))
-    except:
-        # If that fails, try loading state dict directly
-        state_dict = torch.load(checkpoint_path / "adapter_model.bin", map_location="cpu")
-        model.load_state_dict(state_dict, strict=False)
+    # Check if this is a full adapter directory with adapter_config.json
+    adapter_config = checkpoint_path / "adapter_config.json"
+    if adapter_config.exists():
+        # Load as PEFT model
+        try:
+            # Get the base model from the PEFT wrapper
+            base_model = model.base_model if hasattr(model, 'base_model') else model
+            
+            # Load adapter weights
+            model = PeftModel.from_pretrained(
+                base_model,
+                str(checkpoint_path),
+                is_trainable=True,
+            )
+            print(f"✓ Loaded PEFT checkpoint")
+        except Exception as e:
+            print(f"Warning: Failed to load as PEFT model: {e}")
+            # Try loading state dict directly
+            adapter_model = checkpoint_path / "adapter_model.bin"
+            if adapter_model.exists():
+                state_dict = torch.load(adapter_model, map_location="cpu")
+                model.load_state_dict(state_dict, strict=False)
+                print(f"✓ Loaded adapter weights from state dict")
+            else:
+                raise FileNotFoundError(f"No adapter_model.bin found in {checkpoint_path}")
+    else:
+        # Try loading as state dict
+        adapter_model = checkpoint_path / "adapter_model.bin"
+        if adapter_model.exists():
+            state_dict = torch.load(adapter_model, map_location="cpu")
+            model.load_state_dict(state_dict, strict=False)
+            print(f"✓ Loaded adapter weights from state dict")
+        else:
+            # Try loading PyTorch checkpoint directly
+            if checkpoint_path.suffix == ".pt" or checkpoint_path.suffix == ".bin":
+                state_dict = torch.load(checkpoint_path, map_location="cpu")
+                model.load_state_dict(state_dict, strict=False)
+                print(f"✓ Loaded checkpoint from file")
+            else:
+                raise FileNotFoundError(
+                    f"Could not find adapter checkpoint at {checkpoint_path}. "
+                    f"Expected adapter_config.json + adapter_model.bin or a .pt/.bin file."
+                )
     
     return model
-
