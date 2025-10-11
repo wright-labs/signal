@@ -562,6 +562,9 @@ def sample(
         print(f"Run: {run_id}")
         print(f"Prompts: {len(prompts)}")
         
+        # Reload volume to ensure we have latest data
+        data_volume.reload()
+        
         # Load model with LoRA and checkpoint (for inference)
         model, tokenizer, config, paths = _load_run_model(
             user_id, run_id, step=step, for_inference=True
