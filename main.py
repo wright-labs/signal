@@ -44,6 +44,14 @@ from api.schemas import (
     RunStatus,
     RunMetrics,
     ErrorResponse,
+    TokenizeRequest,
+    TokenizeResponse,
+    DetokenizeRequest,
+    DetokenizeResponse,
+    TokenizerInfoResponse,
+    ModelInfoResponse,
+    ApplyChatTemplateRequest,
+    ApplyChatTemplateResponse,
 )
 
 # Import Modal for remote function lookups
@@ -76,6 +84,11 @@ modal_forward_backward = lambda: get_modal_function("forward_backward")
 modal_optim_step = lambda: get_modal_function("optim_step")
 modal_sample = lambda: get_modal_function("sample")
 modal_save_state = lambda: get_modal_function("save_state")
+modal_tokenize = lambda: get_modal_function("tokenize")
+modal_detokenize = lambda: get_modal_function("detokenize")
+modal_get_tokenizer_info = lambda: get_modal_function("get_tokenizer_info")
+modal_get_model_info = lambda: get_modal_function("get_model_info")
+modal_apply_chat_template = lambda: get_modal_function("apply_chat_template")
 
 # =============================================================================
 # LIFESPAN EVENTS
@@ -627,6 +640,8 @@ async def sample(
         
         return SampleResponse(
             outputs=result["outputs"],
+            token_ids=result.get("token_ids", []),
+            tokens=result.get("tokens", []),
             logprobs=result.get("logprobs"),
         )
     
@@ -700,6 +715,151 @@ async def save_state(
             manifest=result.get("manifest"),
             pushed_to_hub=result["pushed_to_hub"],
             hub_model_id=result.get("hub_model_id"),
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/runs/{run_id}/tokenize", response_model=TokenizeResponse)
+async def tokenize(
+    run_id: str,
+    request: TokenizeRequest,
+    user_id: str = Depends(verify_auth),
+):
+    """Tokenize text using the model's tokenizer."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Call Modal function
+        result = modal_tokenize().remote(
+            user_id=user_id,
+            run_id=run_id,
+            text=request.text,
+            add_special_tokens=request.add_special_tokens,
+        )
+        
+        return TokenizeResponse(
+            token_ids=result["token_ids"],
+            tokens=result["tokens"],
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/runs/{run_id}/detokenize", response_model=DetokenizeResponse)
+async def detokenize(
+    run_id: str,
+    request: DetokenizeRequest,
+    user_id: str = Depends(verify_auth),
+):
+    """Detokenize token IDs using the model's tokenizer."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Call Modal function
+        result = modal_detokenize().remote(
+            user_id=user_id,
+            run_id=run_id,
+            token_ids=request.token_ids,
+        )
+        
+        return DetokenizeResponse(
+            text=result["text"],
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/runs/{run_id}/tokenizer_info", response_model=TokenizerInfoResponse)
+async def get_tokenizer_info(
+    run_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Get tokenizer configuration information."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Call Modal function
+        result = modal_get_tokenizer_info().remote(
+            user_id=user_id,
+            run_id=run_id,
+        )
+        
+        return TokenizerInfoResponse(
+            vocab_size=result["vocab_size"],
+            model_max_length=result.get("model_max_length"),
+            bos_token_id=result.get("bos_token_id"),
+            eos_token_id=result.get("eos_token_id"),
+            pad_token_id=result.get("pad_token_id"),
+            unk_token_id=result.get("unk_token_id"),
+            special_tokens=result.get("special_tokens", {}),
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/runs/{run_id}/model_info", response_model=ModelInfoResponse)
+async def get_model_info(
+    run_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Get model architecture information."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Call Modal function
+        result = modal_get_model_info().remote(
+            user_id=user_id,
+            run_id=run_id,
+        )
+        
+        return ModelInfoResponse(
+            base_model=result["base_model"],
+            architecture=result["architecture"],
+            num_parameters=result["num_parameters"],
+            num_trainable_parameters=result["num_trainable_parameters"],
+            hidden_size=result.get("hidden_size"),
+            num_layers=result.get("num_layers"),
+            num_attention_heads=result.get("num_attention_heads"),
+            vocab_size=result.get("vocab_size"),
+            max_position_embeddings=result.get("max_position_embeddings"),
+            chat_template=result.get("chat_template"),
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/runs/{run_id}/apply_chat_template", response_model=ApplyChatTemplateResponse)
+async def apply_chat_template(
+    run_id: str,
+    request: ApplyChatTemplateRequest,
+    user_id: str = Depends(verify_auth),
+):
+    """Apply the model's chat template to format messages."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Call Modal function
+        result = modal_apply_chat_template().remote(
+            user_id=user_id,
+            run_id=run_id,
+            messages=request.messages,
+            add_generation_prompt=request.add_generation_prompt,
+        )
+        
+        return ApplyChatTemplateResponse(
+            text=result["text"],
+            token_ids=result["token_ids"],
         )
     
     except Exception as e:

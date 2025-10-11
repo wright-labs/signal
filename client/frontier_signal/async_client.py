@@ -13,6 +13,11 @@ from .schemas import (
     OptimStepResponse,
     SampleResponse,
     SaveStateResponse,
+    TokenizeResponse,
+    DetokenizeResponse,
+    TokenizerInfoResponse,
+    ModelInfoResponse,
+    ApplyChatTemplateResponse,
 )
 from .exceptions import (
     SignalAPIError,
@@ -152,6 +157,79 @@ class AsyncSignalRun:
             Run metrics
         """
         return await self.client.get_run_metrics(self.run_id)
+    
+    async def tokenize(
+        self,
+        text: str | List[str],
+        add_special_tokens: bool = True,
+    ) -> Dict[str, Any]:
+        """Tokenize text using the model's tokenizer.
+        
+        Args:
+            text: Text string or list of strings to tokenize
+            add_special_tokens: Whether to add special tokens
+            
+        Returns:
+            Response with token_ids and tokens
+        """
+        return await self.client.tokenize(
+            run_id=self.run_id,
+            text=text,
+            add_special_tokens=add_special_tokens,
+        )
+    
+    async def detokenize(
+        self,
+        token_ids: List[int] | List[List[int]],
+    ) -> Dict[str, Any]:
+        """Detokenize token IDs using the model's tokenizer.
+        
+        Args:
+            token_ids: Token IDs (single list or list of lists)
+            
+        Returns:
+            Response with decoded text
+        """
+        return await self.client.detokenize(
+            run_id=self.run_id,
+            token_ids=token_ids,
+        )
+    
+    async def get_tokenizer_info(self) -> Dict[str, Any]:
+        """Get tokenizer configuration information.
+        
+        Returns:
+            Tokenizer information including vocab size and special tokens
+        """
+        return await self.client.get_tokenizer_info(self.run_id)
+    
+    async def get_model_info(self) -> Dict[str, Any]:
+        """Get model architecture information.
+        
+        Returns:
+            Model information including architecture and parameter counts
+        """
+        return await self.client.get_model_info(self.run_id)
+    
+    async def apply_chat_template(
+        self,
+        messages: List[Dict[str, str]],
+        add_generation_prompt: bool = False,
+    ) -> Dict[str, Any]:
+        """Apply the model's chat template to format messages.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            add_generation_prompt: Whether to add generation prompt
+            
+        Returns:
+            Response with formatted text and token_ids
+        """
+        return await self.client.apply_chat_template(
+            run_id=self.run_id,
+            messages=messages,
+            add_generation_prompt=add_generation_prompt,
+        )
 
 
 class AsyncSignalClient:
@@ -487,3 +565,89 @@ class AsyncSignalClient:
         """
         response = await self._request("GET", "/runs")
         return response["runs"]
+    
+    async def tokenize(
+        self,
+        run_id: str,
+        text: str | List[str],
+        add_special_tokens: bool = True,
+    ) -> Dict[str, Any]:
+        """Tokenize text using the model's tokenizer.
+        
+        Args:
+            run_id: Run identifier
+            text: Text string or list of strings to tokenize
+            add_special_tokens: Whether to add special tokens
+            
+        Returns:
+            Response with token_ids and tokens
+        """
+        return await self._request(
+            "POST",
+            f"/runs/{run_id}/tokenize",
+            json={"text": text, "add_special_tokens": add_special_tokens},
+        )
+    
+    async def detokenize(
+        self,
+        run_id: str,
+        token_ids: List[int] | List[List[int]],
+    ) -> Dict[str, Any]:
+        """Detokenize token IDs using the model's tokenizer.
+        
+        Args:
+            run_id: Run identifier
+            token_ids: Token IDs (single list or list of lists)
+            
+        Returns:
+            Response with decoded text
+        """
+        return await self._request(
+            "POST",
+            f"/runs/{run_id}/detokenize",
+            json={"token_ids": token_ids},
+        )
+    
+    async def get_tokenizer_info(self, run_id: str) -> Dict[str, Any]:
+        """Get tokenizer configuration information.
+        
+        Args:
+            run_id: Run identifier
+            
+        Returns:
+            Tokenizer information including vocab size and special tokens
+        """
+        return await self._request("GET", f"/runs/{run_id}/tokenizer_info")
+    
+    async def get_model_info(self, run_id: str) -> Dict[str, Any]:
+        """Get model architecture information.
+        
+        Args:
+            run_id: Run identifier
+            
+        Returns:
+            Model information including architecture and parameter counts
+        """
+        return await self._request("GET", f"/runs/{run_id}/model_info")
+    
+    async def apply_chat_template(
+        self,
+        run_id: str,
+        messages: List[Dict[str, str]],
+        add_generation_prompt: bool = False,
+    ) -> Dict[str, Any]:
+        """Apply the model's chat template to format messages.
+        
+        Args:
+            run_id: Run identifier
+            messages: List of message dicts with 'role' and 'content'
+            add_generation_prompt: Whether to add generation prompt
+            
+        Returns:
+            Response with formatted text and token_ids
+        """
+        return await self._request(
+            "POST",
+            f"/runs/{run_id}/apply_chat_template",
+            json={"messages": messages, "add_generation_prompt": add_generation_prompt},
+        )

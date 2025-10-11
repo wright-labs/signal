@@ -573,26 +573,77 @@ def sample(
         
         # Generate completions
         outputs = []
+        all_token_ids = []
+        all_tokens = []
+        all_logprobs = [] if return_logprobs else None
+        
         print(f"\nGenerating with temperature={temperature}, top_p={top_p}...")
         
         for i, prompt in enumerate(prompts):
             print(f"  Prompt {i+1}/{len(prompts)}: {prompt[:50]}...")
             
             inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+            input_length = inputs['input_ids'].shape[1]
             
             with torch.no_grad():
-                generated = model.generate(
-                    **inputs,
-                    max_new_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    do_sample=temperature > 0,
-                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-                )
+                if return_logprobs:
+                    # Generate with scores for logprobs
+                    generation_output = model.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        do_sample=temperature > 0,
+                        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                        output_scores=True,
+                        return_dict_in_generate=True,
+                    )
+                    generated_ids = generation_output.sequences[0]
+                    scores = generation_output.scores  # Tuple of tensors, one per generated token
+                    
+                    # Compute logprobs from scores
+                    import torch.nn.functional as F
+                    token_logprobs = []
+                    for score in scores:
+                        # score is shape (batch_size, vocab_size)
+                        log_probs = F.log_softmax(score[0], dim=-1)
+                        # Get the logprob of the selected token
+                        # We need to get which token was actually selected
+                        # The scores correspond to the generated tokens after input
+                        token_logprobs.append(log_probs.cpu().tolist())
+                    
+                    # For simpler output, just return the logprob of the selected tokens
+                    selected_token_ids = generated_ids[input_length:].cpu().tolist()
+                    selected_logprobs = []
+                    for idx, token_id in enumerate(selected_token_ids):
+                        if idx < len(token_logprobs):
+                            selected_logprobs.append(token_logprobs[idx][token_id])
+                    
+                    all_logprobs.append(selected_logprobs)
+                else:
+                    generated_ids = model.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        do_sample=temperature > 0,
+                        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                    )[0]
             
-            output_text = tokenizer.decode(generated[0], skip_special_tokens=True)
+            # Decode full output
+            output_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
             outputs.append(output_text)
+            
+            # Extract generated tokens (excluding prompt)
+            generated_token_ids = generated_ids[input_length:].cpu().tolist()
+            all_token_ids.append(generated_token_ids)
+            
+            # Convert token IDs to token strings
+            token_strings = tokenizer.convert_ids_to_tokens(generated_token_ids)
+            all_tokens.append(token_strings)
+            
             print(f"    Output: {output_text[:100]}...")
+            print(f"    Tokens generated: {len(generated_token_ids)}")
         
         print(f"\n{'=' * 80}")
         print(f"✓ GENERATED {len(outputs)} COMPLETIONS")
@@ -601,7 +652,9 @@ def sample(
         return {
             "status": "success",
             "outputs": outputs,
-            "logprobs": None if not return_logprobs else [],  # TODO: Implement logprobs
+            "token_ids": all_token_ids,
+            "tokens": all_tokens,
+            "logprobs": all_logprobs,
         }
     
     except Exception as e:
@@ -793,5 +846,365 @@ def save_state(
     
     except Exception as e:
         error_msg = f"Save state failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"\n❌ ERROR: {error_msg}")
+        raise
+
+
+@app.function(
+    image=INFERENCE_IMAGE,
+    volumes=VOLUME_CONFIG,
+    secrets=[huggingface_secret],
+    timeout=10 * 60,  # 10 minutes
+    gpu="l40s:1",
+)
+def tokenize(
+    user_id: str,
+    run_id: str,
+    text: str | List[str],
+    add_special_tokens: bool = True,
+) -> Dict[str, Any]:
+    """Tokenize text using the model's tokenizer.
+    
+    Args:
+        user_id: User identifier
+        run_id: Run identifier
+        text: Text string or list of strings to tokenize
+        add_special_tokens: Whether to add special tokens
+        
+    Returns:
+        Dict with token_ids and token strings
+    """
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"TOKENIZING TEXT")
+        print(f"{'=' * 80}")
+        print(f"Run: {run_id}")
+        
+        # Reload volume
+        data_volume.reload()
+        
+        # Load tokenizer (no need to load full model for tokenization)
+        _, tokenizer, _, _ = _load_run_model(
+            user_id, run_id, step=0, for_inference=True
+        )
+        
+        # Handle single string or list of strings
+        texts = [text] if isinstance(text, str) else text
+        
+        # Tokenize
+        encoded = tokenizer(
+            texts,
+            add_special_tokens=add_special_tokens,
+            return_tensors=None,  # Return lists instead of tensors
+        )
+        
+        # Convert to token strings
+        all_tokens = []
+        for token_ids in encoded['input_ids']:
+            tokens = tokenizer.convert_ids_to_tokens(token_ids)
+            all_tokens.append(tokens)
+        
+        print(f"✓ Tokenized {len(texts)} text(s)")
+        
+        return {
+            "status": "success",
+            "token_ids": encoded['input_ids'],
+            "tokens": all_tokens,
+        }
+    
+    except Exception as e:
+        error_msg = f"Tokenization failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"\n❌ ERROR: {error_msg}")
+        raise
+
+
+@app.function(
+    image=INFERENCE_IMAGE,
+    volumes=VOLUME_CONFIG,
+    secrets=[huggingface_secret],
+    timeout=10 * 60,  # 10 minutes
+    gpu="l40s:1",
+)
+def detokenize(
+    user_id: str,
+    run_id: str,
+    token_ids: List[int] | List[List[int]],
+) -> Dict[str, Any]:
+    """Detokenize token IDs using the model's tokenizer.
+    
+    Args:
+        user_id: User identifier
+        run_id: Run identifier
+        token_ids: Token IDs (single list or list of lists)
+        
+    Returns:
+        Dict with decoded text
+    """
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"DETOKENIZING TOKEN IDS")
+        print(f"{'=' * 80}")
+        print(f"Run: {run_id}")
+        
+        # Reload volume
+        data_volume.reload()
+        
+        # Load tokenizer
+        _, tokenizer, _, _ = _load_run_model(
+            user_id, run_id, step=0, for_inference=True
+        )
+        
+        # Handle single list or list of lists
+        is_single = isinstance(token_ids[0], int) if token_ids else True
+        ids_to_decode = [token_ids] if is_single else token_ids
+        
+        # Decode
+        texts = []
+        for ids in ids_to_decode:
+            text = tokenizer.decode(ids, skip_special_tokens=True)
+            texts.append(text)
+        
+        result = texts[0] if is_single else texts
+        
+        print(f"✓ Detokenized {len(ids_to_decode)} sequence(s)")
+        
+        return {
+            "status": "success",
+            "text": result,
+        }
+    
+    except Exception as e:
+        error_msg = f"Detokenization failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"\n❌ ERROR: {error_msg}")
+        raise
+
+
+@app.function(
+    image=INFERENCE_IMAGE,
+    volumes=VOLUME_CONFIG,
+    secrets=[huggingface_secret],
+    timeout=10 * 60,  # 10 minutes
+    gpu="l40s:1",
+)
+def get_tokenizer_info(
+    user_id: str,
+    run_id: str,
+) -> Dict[str, Any]:
+    """Get tokenizer configuration information.
+    
+    Args:
+        user_id: User identifier
+        run_id: Run identifier
+        
+    Returns:
+        Dict with tokenizer info
+    """
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"GETTING TOKENIZER INFO")
+        print(f"{'=' * 80}")
+        print(f"Run: {run_id}")
+        
+        # Reload volume
+        data_volume.reload()
+        
+        # Load tokenizer
+        _, tokenizer, _, _ = _load_run_model(
+            user_id, run_id, step=0, for_inference=True
+        )
+        
+        # Extract special tokens
+        special_tokens = {}
+        if tokenizer.bos_token:
+            special_tokens['bos_token'] = tokenizer.bos_token
+        if tokenizer.eos_token:
+            special_tokens['eos_token'] = tokenizer.eos_token
+        if tokenizer.pad_token:
+            special_tokens['pad_token'] = tokenizer.pad_token
+        if tokenizer.unk_token:
+            special_tokens['unk_token'] = tokenizer.unk_token
+        if hasattr(tokenizer, 'sep_token') and tokenizer.sep_token:
+            special_tokens['sep_token'] = tokenizer.sep_token
+        if hasattr(tokenizer, 'cls_token') and tokenizer.cls_token:
+            special_tokens['cls_token'] = tokenizer.cls_token
+        
+        info = {
+            "status": "success",
+            "vocab_size": tokenizer.vocab_size,
+            "model_max_length": tokenizer.model_max_length if hasattr(tokenizer, 'model_max_length') else None,
+            "bos_token_id": tokenizer.bos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
+            "unk_token_id": tokenizer.unk_token_id if hasattr(tokenizer, 'unk_token_id') else None,
+            "special_tokens": special_tokens,
+        }
+        
+        print(f"✓ Retrieved tokenizer info")
+        print(f"  Vocab size: {info['vocab_size']}")
+        print(f"  Special tokens: {list(special_tokens.keys())}")
+        
+        return info
+    
+    except Exception as e:
+        error_msg = f"Get tokenizer info failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"\n❌ ERROR: {error_msg}")
+        raise
+
+
+@app.function(
+    image=INFERENCE_IMAGE,
+    volumes=VOLUME_CONFIG,
+    secrets=[huggingface_secret],
+    timeout=10 * 60,  # 10 minutes
+    gpu="l40s:1",
+)
+def get_model_info(
+    user_id: str,
+    run_id: str,
+) -> Dict[str, Any]:
+    """Get model architecture information.
+    
+    Args:
+        user_id: User identifier
+        run_id: Run identifier
+        
+    Returns:
+        Dict with model info
+    """
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"GETTING MODEL INFO")
+        print(f"{'=' * 80}")
+        print(f"Run: {run_id}")
+        
+        # Reload volume
+        data_volume.reload()
+        
+        # Load model and tokenizer
+        model, tokenizer, config, _ = _load_run_model(
+            user_id, run_id, step=0, for_inference=True
+        )
+        
+        # Count parameters
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        # Get architecture details from config
+        model_config = model.config
+        architecture = model_config.architectures[0] if hasattr(model_config, 'architectures') else type(model).__name__
+        
+        # Get chat template if available
+        chat_template = None
+        if hasattr(tokenizer, 'chat_template'):
+            chat_template = tokenizer.chat_template
+        
+        info = {
+            "status": "success",
+            "base_model": config.get("base_model", "unknown"),
+            "architecture": architecture,
+            "num_parameters": total_params,
+            "num_trainable_parameters": trainable_params,
+            "hidden_size": getattr(model_config, 'hidden_size', None),
+            "num_layers": getattr(model_config, 'num_hidden_layers', None),
+            "num_attention_heads": getattr(model_config, 'num_attention_heads', None),
+            "vocab_size": getattr(model_config, 'vocab_size', None),
+            "max_position_embeddings": getattr(model_config, 'max_position_embeddings', None),
+            "chat_template": chat_template,
+        }
+        
+        print(f"✓ Retrieved model info")
+        print(f"  Architecture: {architecture}")
+        print(f"  Total parameters: {total_params:,}")
+        print(f"  Trainable parameters: {trainable_params:,}")
+        
+        return info
+    
+    except Exception as e:
+        error_msg = f"Get model info failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"\n❌ ERROR: {error_msg}")
+        raise
+
+
+@app.function(
+    image=INFERENCE_IMAGE,
+    volumes=VOLUME_CONFIG,
+    secrets=[huggingface_secret],
+    timeout=10 * 60,  # 10 minutes
+    gpu="l40s:1",
+)
+def apply_chat_template(
+    user_id: str,
+    run_id: str,
+    messages: List[Dict[str, str]],
+    add_generation_prompt: bool = False,
+) -> Dict[str, Any]:
+    """Apply the model's chat template to format messages.
+    
+    Args:
+        user_id: User identifier
+        run_id: Run identifier
+        messages: List of message dicts with 'role' and 'content'
+        add_generation_prompt: Whether to add generation prompt
+        
+    Returns:
+        Dict with formatted text and token_ids
+    """
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"APPLYING CHAT TEMPLATE")
+        print(f"{'=' * 80}")
+        print(f"Run: {run_id}")
+        print(f"Messages: {len(messages)}")
+        
+        # Reload volume
+        data_volume.reload()
+        
+        # Load tokenizer
+        _, tokenizer, _, _ = _load_run_model(
+            user_id, run_id, step=0, for_inference=True
+        )
+        
+        # Apply chat template
+        if hasattr(tokenizer, 'apply_chat_template'):
+            # Get formatted text
+            formatted_text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+            
+            # Also get tokenized version
+            token_ids = tokenizer.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=add_generation_prompt,
+            )
+        else:
+            # Fallback: simple concatenation
+            print("⚠ Warning: Tokenizer doesn't have chat_template, using simple format")
+            parts = []
+            for msg in messages:
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                parts.append(f"{role.capitalize()}: {content}")
+            
+            formatted_text = "\n".join(parts)
+            if add_generation_prompt:
+                formatted_text += "\nAssistant:"
+            
+            token_ids = tokenizer.encode(formatted_text)
+        
+        print(f"✓ Applied chat template")
+        print(f"  Formatted length: {len(formatted_text)} chars")
+        print(f"  Token count: {len(token_ids)}")
+        
+        return {
+            "status": "success",
+            "text": formatted_text,
+            "token_ids": token_ids,
+        }
+    
+    except Exception as e:
+        error_msg = f"Apply chat template failed: {str(e)}\n{traceback.format_exc()}"
         print(f"\n❌ ERROR: {error_msg}")
         raise

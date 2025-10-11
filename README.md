@@ -37,8 +37,8 @@ run = client.create_run(
 
 # Prepare training data
 batch = [
-    {"text": "The quick brown fox jumps over the lazy dog."},
-    {"text": "Machine learning is transforming technology."},
+    {"input": "The quick brown fox jumps over the lazy dog."},
+    {"output": "Machine learning is transforming technology."},
 ]
 
 # Training loop

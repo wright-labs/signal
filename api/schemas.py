@@ -122,6 +122,8 @@ class SampleRequest(BaseModel):
 class SampleResponse(BaseModel):
     """Response from sampling."""
     outputs: List[str]
+    token_ids: List[List[int]] = Field(default_factory=list, description="Token IDs for each generated output")
+    tokens: List[List[str]] = Field(default_factory=list, description="Token strings for each generated output")
     logprobs: Optional[List[List[float]]] = None
 
 
@@ -168,3 +170,62 @@ class ErrorResponse(BaseModel):
     """Error response."""
     error: str
     detail: Optional[str] = None
+
+
+class TokenizeRequest(BaseModel):
+    """Request for tokenizing text."""
+    text: str | List[str] = Field(..., description="Text string or list of strings to tokenize")
+    add_special_tokens: bool = Field(True, description="Whether to add special tokens (BOS, EOS)")
+
+
+class TokenizeResponse(BaseModel):
+    """Response from tokenization."""
+    token_ids: List[List[int]] = Field(..., description="Token IDs for each input text")
+    tokens: List[List[str]] = Field(..., description="Token strings for each input text")
+
+
+class DetokenizeRequest(BaseModel):
+    """Request for detokenizing token IDs."""
+    token_ids: List[int] | List[List[int]] = Field(..., description="Token IDs (single list or list of lists)")
+
+
+class DetokenizeResponse(BaseModel):
+    """Response from detokenization."""
+    text: str | List[str] = Field(..., description="Decoded text (string or list of strings)")
+
+
+class TokenizerInfoResponse(BaseModel):
+    """Tokenizer configuration information."""
+    vocab_size: int = Field(..., description="Size of vocabulary")
+    model_max_length: Optional[int] = Field(None, description="Maximum sequence length")
+    bos_token_id: Optional[int] = Field(None, description="Beginning of sequence token ID")
+    eos_token_id: Optional[int] = Field(None, description="End of sequence token ID")
+    pad_token_id: Optional[int] = Field(None, description="Padding token ID")
+    unk_token_id: Optional[int] = Field(None, description="Unknown token ID")
+    special_tokens: Dict[str, str] = Field(default_factory=dict, description="Special token strings")
+
+
+class ModelInfoResponse(BaseModel):
+    """Model architecture information."""
+    base_model: str = Field(..., description="Base model name")
+    architecture: str = Field(..., description="Model architecture type")
+    num_parameters: int = Field(..., description="Total number of parameters")
+    num_trainable_parameters: int = Field(..., description="Number of trainable parameters")
+    hidden_size: Optional[int] = Field(None, description="Hidden layer size")
+    num_layers: Optional[int] = Field(None, description="Number of transformer layers")
+    num_attention_heads: Optional[int] = Field(None, description="Number of attention heads")
+    vocab_size: Optional[int] = Field(None, description="Vocabulary size from model config")
+    max_position_embeddings: Optional[int] = Field(None, description="Maximum position embeddings")
+    chat_template: Optional[str] = Field(None, description="Chat template if available")
+
+
+class ApplyChatTemplateRequest(BaseModel):
+    """Request for applying chat template."""
+    messages: List[Dict[str, str]] = Field(..., description="List of message dicts with 'role' and 'content'")
+    add_generation_prompt: bool = Field(False, description="Whether to add generation prompt at the end")
+
+
+class ApplyChatTemplateResponse(BaseModel):
+    """Response from applying chat template."""
+    text: str = Field(..., description="Formatted text with chat template applied")
+    token_ids: List[int] = Field(..., description="Token IDs of formatted text")

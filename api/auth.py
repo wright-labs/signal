@@ -3,8 +3,7 @@
 This module handles API key validation only. API key generation is handled
 by the Frontier Backend service.
 
-For self-hosting: You can implement your own authentication by modifying this
-module or by setting API keys directly in the database.
+For self-hosting: Just don't add auth duh.
 """
 import os
 import bcrypt
