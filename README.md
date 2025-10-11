@@ -16,12 +16,11 @@ This design gives you full control over the training loop while we handle the in
 ### Train Your First Model
 
 ```python
-from frontier_signal import SignalClient
+import rewardsignal
 
 # Initialize client
 client = SignalClient(
     api_key="sk-...",  # Your API key
-    base_url="https://api.signal.example.com"
 )
 
 # List available models
