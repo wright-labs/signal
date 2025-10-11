@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "frontier-signal"
+name = "rewardsignal"
 version = "0.1.0"
-description = "Python SDK for Frontier Signal - Training API for Language Models"
+description = "Python SDK for Reward Signal - Training API for Language Models"
 readme = "README.md"
 authors = [
     {name = "Frontier Signal Team", email = "support@frontier-signal.com"}
