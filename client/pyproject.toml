@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rewardsignal"
+version = "0.1.0"
+description = "Python SDK for Reward Signal - Training API for Language Models"
+readme = "README.md"
+authors = [
+    {name = "Frontier Signal Team", email = "support@frontier-signal.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.8"
+keywords = ["machine-learning", "llm", "fine-tuning", "lora", "training", "ai", "frontier"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "requests>=2.31.0",
+    "httpx[http2]>=0.27.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/wright-labs/signal"
+Documentation = "https://docs.tryfrontier.dev"
+Repository = "https://github.com/wright-labs/signal"
+Issues = "https://github.com/wright-labs/signal/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["frontier_signal*"]
+exclude = ["tests*", "examples*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

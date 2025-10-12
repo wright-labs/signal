@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include frontier_signal *.py
+recursive-include examples *.py
+exclude frontier_signal/__pycache__
+exclude frontier_signal/*.pyc
