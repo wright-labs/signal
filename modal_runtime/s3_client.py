@@ -39,15 +39,7 @@ def sanitize_path_component(component: str) -> str:
 
 
 def get_tenant_prefix(owner_id: str, run_id: str) -> str:
-    """Generate safe S3 path with tenant isolation.
-    
-    Args:
-        owner_id: User/tenant identifier
-        run_id: Run identifier
-        
-    Returns:
-        S3 prefix: tenants/{owner_id}/runs/{run_id}/
-    """
+    """Generate safe S3 path with tenant isolation."""
     # Sanitize inputs to prevent path traversal
     safe_owner_id = sanitize_path_component(owner_id)
     safe_run_id = sanitize_path_component(run_id)
@@ -56,17 +48,7 @@ def get_tenant_prefix(owner_id: str, run_id: str) -> str:
 
 
 def get_artifact_path(owner_id: str, run_id: str, artifact_type: str, step: int) -> str:
-    """Generate S3 path for artifact.
-    
-    Args:
-        owner_id: User/tenant identifier
-        run_id: Run identifier
-        artifact_type: Type of artifact ('state', 'sampler', 'merged')
-        step: Training step number
-        
-    Returns:
-        Full S3 path for artifact
-    """
+    """Generate S3 path for artifact."""
     prefix = get_tenant_prefix(owner_id, run_id)
     
     # Map artifact types to S3 subdirectories
@@ -83,16 +65,7 @@ def get_artifact_path(owner_id: str, run_id: str, artifact_type: str, step: int)
 
 
 def upload_file(local_path: str, s3_path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
-    """Upload a single file to S3.
-    
-    Args:
-        local_path: Local file path
-        s3_path: S3 object key (path within bucket)
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        Dict with upload metadata
-    """
+    """Upload a single file to S3."""
     if bucket is None:
         bucket = get_s3_bucket_name()
     
@@ -121,16 +94,7 @@ def upload_file(local_path: str, s3_path: str, bucket: Optional[str] = None) -> 
 
 
 def upload_directory(local_path: str, s3_prefix: str, bucket: Optional[str] = None) -> Dict[str, Any]:
-    """Upload directory recursively to S3.
-    
-    Args:
-        local_path: Local directory path
-        s3_prefix: S3 prefix (directory path within bucket)
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        Dict with upload summary
-    """
+    """Upload directory recursively to S3."""
     if bucket is None:
         bucket = get_s3_bucket_name()
     
@@ -175,16 +139,7 @@ def upload_directory(local_path: str, s3_prefix: str, bucket: Optional[str] = No
 
 
 def upload_manifest(manifest_dict: Dict[str, Any], s3_prefix: str, bucket: Optional[str] = None) -> Dict[str, Any]:
-    """Upload manifest.json to S3.
-    
-    Args:
-        manifest_dict: Manifest data as dictionary
-        s3_prefix: S3 prefix (directory where manifest should be saved)
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        Dict with upload metadata
-    """
+    """Upload manifest.json to S3."""
     if bucket is None:
         bucket = get_s3_bucket_name()
     
@@ -217,15 +172,7 @@ def upload_manifest(manifest_dict: Dict[str, Any], s3_prefix: str, bucket: Optio
 
 
 def generate_signed_url(s3_uri: str, expiration: int = 3600) -> str:
-    """Generate pre-signed URL for S3 object download.
-    
-    Args:
-        s3_uri: S3 URI (s3://bucket/key)
-        expiration: URL expiration time in seconds (default: 1 hour)
-        
-    Returns:
-        Pre-signed download URL
-    """
+    """Generate pre-signed URL for S3 object download."""
     # Parse S3 URI
     if not s3_uri.startswith('s3://'):
         raise ValueError(f"Invalid S3 URI: {s3_uri}")
@@ -254,14 +201,6 @@ def generate_signed_url_for_prefix(s3_prefix: str, expiration: int = 3600, bucke
     Note: S3 doesn't support signed URLs for prefixes directly.
     This returns a signed URL for a zip archive (if created) or the first file in the directory.
     For production, consider creating a zip on-the-fly or using CloudFront.
-    
-    Args:
-        s3_prefix: S3 prefix (directory path)
-        expiration: URL expiration time in seconds
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        Pre-signed download URL (for first file as example)
     """
     if bucket is None:
         bucket = get_s3_bucket_name()
@@ -278,16 +217,7 @@ def generate_signed_url_for_prefix(s3_prefix: str, expiration: int = 3600, bucke
 
 
 def list_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = None) -> list:
-    """List all artifacts for a run.
-    
-    Args:
-        owner_id: User/tenant identifier
-        run_id: Run identifier
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        List of artifact objects
-    """
+    """List all artifacts for a run."""
     if bucket is None:
         bucket = get_s3_bucket_name()
     
@@ -315,16 +245,7 @@ def list_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = None) -> 
 
 
 def delete_run_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = None) -> Dict[str, Any]:
-    """Delete all S3 artifacts for a run (use with caution).
-    
-    Args:
-        owner_id: User/tenant identifier
-        run_id: Run identifier
-        bucket: S3 bucket name (uses env var if not provided)
-        
-    Returns:
-        Dict with deletion summary
-    """
+    """Delete all S3 artifacts for a run (use with caution)."""
     if bucket is None:
         bucket = get_s3_bucket_name()
     

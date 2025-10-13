@@ -43,7 +43,6 @@ def compute_forward_backward(
     # Verify loss requires grad
     if not loss.requires_grad:
         raise RuntimeError(
-            f"Loss does not require grad! This means gradient flow is broken. "
             f"Loss tensor: {loss}, requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}. "
             f"This is likely due to missing prepare_model_for_kbit_training() for quantized models."
         )

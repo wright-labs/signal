@@ -1,7 +1,7 @@
 """Pydantic schemas for Signal SDK requests and responses."""
 
 from typing import List, Dict, Any, Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 
 
@@ -9,6 +9,11 @@ class RunConfig(BaseModel):
     """Configuration for creating a new training run."""
     
     base_model: str = Field(..., description="HuggingFace model ID or path")
+    gpu_config: Optional[str] = Field(
+        None,
+        description="GPU configuration override (e.g., 'L40S:2', 'A100-80GB:4'). "
+                    "If not provided, automatically allocated based on model size."
+    )
     lora_r: int = Field(32, ge=1, le=512, description="LoRA rank (1-512)")
     lora_alpha: int = Field(64, ge=1, le=1024, description="LoRA alpha parameter (1-1024)")
     lora_dropout: float = Field(0.0, ge=0.0, le=0.5, description="LoRA dropout rate (0.0-0.5)")
@@ -46,10 +51,21 @@ class RunResponse(BaseModel):
 
 
 class TrainingExample(BaseModel):
-    """Individual training example with validation."""
+    """Individual training example with validation.
     
-    text: Optional[str] = Field(None, max_length=32768, description="Raw text (max 32K chars)")
-    messages: Optional[List[Dict[str, str]]] = Field(None, max_length=50, description="Chat messages (max 50)")
+    Supports three formats:
+    1. SFT (Supervised Fine-Tuning) with raw text: {"text": "..."}
+    2. SFT with chat messages: {"messages": [...]}
+    3. DPO (Direct Preference Optimization): {"prompt": "...", "chosen": "...", "rejected": "..."}
+    """
+    # SFT formats
+    text: Optional[str] = Field(None, max_length=32768, description="Raw text for SFT (max 32K chars)")
+    messages: Optional[List[Dict[str, str]]] = Field(None, max_length=50, description="Chat messages for SFT (max 50)")
+    
+    # DPO format
+    prompt: Optional[str] = Field(None, max_length=32768, description="Prompt for DPO preference pairs")
+    chosen: Optional[str] = Field(None, max_length=32768, description="Preferred/winning response for DPO")
+    rejected: Optional[str] = Field(None, max_length=32768, description="Rejected/losing response for DPO")
     
     @field_validator('text')
     @classmethod
@@ -71,13 +87,47 @@ class TrainingExample(BaseModel):
                     raise ValueError("Message role must be 'system', 'user', or 'assistant'")
         return v
     
-    @field_validator('messages')
+    @field_validator('prompt', 'chosen', 'rejected')
     @classmethod
-    def validate_at_least_one(cls, v: Optional[List[Dict[str, str]]], info) -> Optional[List[Dict[str, str]]]:
-        """Ensure at least one of text or messages is provided."""
-        if v is None and info.data.get('text') is None:
-            raise ValueError("Either 'text' or 'messages' must be provided")
+    def validate_preference_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure preference fields are not empty if provided."""
+        if v is not None and len(v.strip()) == 0:
+            raise ValueError("Preference field cannot be empty or whitespace only")
         return v
+    
+    @model_validator(mode='after')
+    def validate_format(self) -> 'TrainingExample':
+        """Ensure exactly one valid format is provided."""
+        has_text = self.text is not None
+        has_messages = self.messages is not None
+        has_preference = all([
+            self.prompt is not None, 
+            self.chosen is not None, 
+            self.rejected is not None
+        ])
+        
+        format_count = sum([has_text, has_messages, has_preference])
+        
+        if format_count == 0:
+            raise ValueError(
+                "Must provide one of: 'text' (SFT), 'messages' (SFT), "
+                "or ('prompt', 'chosen', 'rejected') for DPO"
+            )
+        
+        if format_count > 1:
+            raise ValueError(
+                "Provide only ONE format: 'text' OR 'messages' OR ('prompt', 'chosen', 'rejected')"
+            )
+        
+        # If any preference field is set, all must be set
+        preference_fields = [self.prompt, self.chosen, self.rejected]
+        partial_preference = any(f is not None for f in preference_fields)
+        if partial_preference and not has_preference:
+            raise ValueError(
+                "For DPO format, must provide ALL three fields: 'prompt', 'chosen', and 'rejected'"
+            )
+        
+        return self
 
 
 class ForwardBackwardRequest(BaseModel):
@@ -90,6 +140,8 @@ class ForwardBackwardRequest(BaseModel):
         description="List of training examples (1-128)"
     )
     accumulate: bool = Field(False, description="Accumulate gradients instead of replacing")
+    loss_fn: str = Field("causal_lm", description="Loss function to use (causal_lm, dpo)")
+    loss_kwargs: Dict[str, Any] = Field(default_factory=dict, description="Additional arguments for loss function")
 
 
 class ForwardBackwardResponse(BaseModel):

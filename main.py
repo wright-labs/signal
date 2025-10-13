@@ -62,36 +62,37 @@ import modal
 
 _training_session_cls_cache = {}
 
-def get_training_session(run_id: str, gpu_config: str = "l40s:1"):
+def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
     """Get stateful training session instance for a run with specific GPU config.
     
     Args:
         run_id: Run identifier
-        gpu_config: GPU configuration (e.g., "l40s:2", "a100:4")
+        gpu_config: GPU configuration (e.g., "L40S:2", "A100-80GB:4")
     
     Modal automatically routes calls with same instance to same container.
     """
     global _training_session_cls_cache
     
     try:
-        # Map GPU config to class name
+        # Map GPU config to class name (normalize case)
         gpu_to_class = {
-            "l40s:1": "TrainingSession_L40S_1",
-            "l40s:2": "TrainingSession_L40S_2",
-            "l40s:4": "TrainingSession_L40S_4",
-            "a100:1": "TrainingSession_A100_1",
-            "a100:2": "TrainingSession_A100_2",
-            "a100:4": "TrainingSession_A100_4",
-            "h100:1": "TrainingSession_H100_1",
-            "h100:2": "TrainingSession_H100_2",
+            "L40S:1": "TrainingSession_L40S_1",
+            "L40S:2": "TrainingSession_L40S_2",
+            "L40S:4": "TrainingSession_L40S_4",
+            "A100-80GB:1": "TrainingSession_A100_80GB_1",
+            "A100-80GB:2": "TrainingSession_A100_80GB_2",
+            "A100-80GB:4": "TrainingSession_A100_80GB_4",
+            "A100-80GB:8": "TrainingSession_A100_80GB_8",
+            "H100:1": "TrainingSession_H100_1",
+            "H100:4": "TrainingSession_H100_4",
         }
         
         class_name = gpu_to_class.get(gpu_config)
         if class_name is None:
             # Fallback to single GPU
-            logging.warning(f"GPU config '{gpu_config}' not found, using l40s:1")
+            logging.warning(f"GPU config '{gpu_config}' not found in mapping, using L40S:1")
             class_name = "TrainingSession_L40S_1"
-            gpu_config = "l40s:1"
+            gpu_config = "L40S:1"
         
         # Cache per GPU config
         if gpu_config not in _training_session_cls_cache:
@@ -622,16 +623,17 @@ async def create_run(
         model_config = model_registry.get_model(config.base_model)
         framework = model_config["framework"]
         
-        # Use user-provided GPU config, or fallback to model's default
-        if config.gpu_config:
-            gpu_config = config.gpu_config
-            logging.info(f"Using user-provided GPU config: {gpu_config}")
-        else:
-            gpu_config = model_config["gpu"]
-            logging.info(f"Using model's default GPU config: {gpu_config}")
+        # Use auto-allocation logic
+        from api.gpu_allocator import allocate_gpu_config, validate_gpu_config as validate_gpu
+        
+        gpu_config = allocate_gpu_config(
+            model_name=config.base_model,
+            user_override=config.gpu_config
+        )
+        logging.info(f"Allocated GPU config: {gpu_config} for model {config.base_model}")
         
         # Validate GPU config format
-        validate_gpu_config(gpu_config)
+        validate_gpu(gpu_config)
         
         # Get config as dict
         config_dict = config.model_dump()

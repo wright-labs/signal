@@ -18,7 +18,6 @@ def causal_lm_loss(
     
     loss = outputs.loss
     
-    # Handle DataParallel (loss is a tensor with one element per GPU)
     if loss.dim() > 0:
         loss = loss.mean()
     
@@ -126,18 +125,7 @@ LOSS_FUNCTIONS = {
 
 
 def get_loss_function(loss_fn: str):
-    """
-    Get loss function by name.
-    
-    Args:
-        loss_fn: Name of loss function
-        
-    Returns:
-        Loss function callable
-        
-    Raises:
-        ValueError: If loss function not found
-    """
+    """Get loss function by name."""
     if loss_fn not in LOSS_FUNCTIONS:
         available = ", ".join(LOSS_FUNCTIONS.keys())
         raise ValueError(
@@ -153,17 +141,6 @@ def compute_loss(
     loss_fn: str = "causal_lm",
     **loss_kwargs
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
-    """
-    Compute loss using specified loss function.
-    
-    Args:
-        model: Model instance
-        batch: Tokenized batch
-        loss_fn: Name of loss function to use
-        **loss_kwargs: Additional arguments for loss function
-        
-    Returns:
-        Tuple of (loss, metrics_dict)
-    """
+    """Compute loss using specified loss function."""
     loss_func = get_loss_function(loss_fn)
     return loss_func(model, batch, **loss_kwargs)

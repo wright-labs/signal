@@ -9,6 +9,10 @@ from modal_runtime.utils.checkpoint import (
     find_latest_checkpoint,
 )
 from modal_runtime.utils.paths import get_run_paths, save_run_config, load_run_config
+from modal_runtime.utils.preference_utils import (
+    format_preference_pairs_for_dpo,
+    format_preference_pairs_with_chat_template,
+)
 
 __all__ = [
     "setup_optimizer",
@@ -24,5 +28,7 @@ __all__ = [
     "get_run_paths",
     "save_run_config",
     "load_run_config",
+    "format_preference_pairs_for_dpo",
+    "format_preference_pairs_with_chat_template",
 ]
 

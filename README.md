@@ -89,80 +89,83 @@ print(f"Saved to: {artifact['checkpoint_path']}")
 
 Want a specific model? Contact us and we'll add it!
 
-## GPU Allocation
+## Automatic GPU Allocation
 
-Signal automatically allocates the right GPU resources based on the model you choose. Each model has a default GPU configuration, but **you can optionally override this** for your specific needs:
+Signal automatically allocates the optimal GPU resources based on your model size. You don't need to think about infrastructure - just specify your model and Signal handles the rest:
+
+### Allocation Rules
+
+- **< 1B parameters**: L40S (single GPU)
+- **1B - 7B parameters**: L40S or A100 (single GPU)
+- **7B - 13B parameters**: A100-80GB (single GPU)
+- **13B - 30B parameters**: A100-80GB (2 GPUs)
+- **30B - 70B parameters**: A100-80GB (4 GPUs)
+- **> 70B parameters**: A100-80GB (8 GPUs) or H100 (4 GPUs)
 
 ### Single-GPU Training (Small Models)
-Models like Llama-3.2-3B automatically use single-GPU training with 8-bit quantization:
-- Efficient PEFT (Parameter-Efficient Fine-Tuning)
+
+Models under 7B parameters automatically use single-GPU training:
+
+- Efficient LoRA fine-tuning
 - Fast iteration speed
 - Cost-effective for smaller models
+- Optional quantization (4-bit/8-bit)
 
 ### Multi-GPU Training (Large Models)
-Models like Llama-3.1-70B automatically use multi-GPU training with FSDP (Fully Sharded Data Parallel):
-- Distributed across 4-8 GPUs
-- Uses Accelerate for efficient parallelism
+
+Models over 7B parameters automatically use multi-GPU training with DataParallel:
+
+- Distributed across 2-8 GPUs
 - Transparent to your training code
 - Same API primitives work seamlessly
+- Quantization disabled (incompatible with DataParallel)
 
 ```python
-# Same code works for both single and multi-GPU!
+# Automatic allocation - no GPU config needed!
 run = client.create_run(
-    base_model="meta-llama/Llama-3.1-70B",  # Automatically uses 4x A100
+    base_model="Qwen/Qwen2.5-7B",  # Automatically uses optimal GPU config
     lora_r=32,
 )
 
-# Training loop is identical
+# Training loop is identical regardless of GPU count
 result = run.forward_backward(batch=batch)
 run.optim_step()
 ```
 
-### GPU Configuration Reference
+### Override GPU Allocation
 
-See `config/models.yaml` for default GPU allocations:
-
-- **Llama-3.2-1B/3B**: `l40s:1` (single L40S)
-- **Llama-3.1-8B**: `a100-80gb:1` (single A100)
-- **Llama-3.1-70B**: `a100-80gb:4` (4x A100 with FSDP)
-- **Qwen2.5-32B**: `a100-80gb:4` (4x A100 with FSDP)
-
-### Custom GPU Configuration
-
-You can override the default GPU allocation for any model:
+You can optionally override the automatic allocation for specific use cases:
 
 ```python
-# Use default GPU config (a100-80gb:1 for Llama-3.1-8B)
+# Automatic allocation (recommended)
 run = client.create_run(
-    base_model="meta-llama/Llama-3.1-8B",
+    base_model="Qwen/Qwen2.5-7B",
     lora_r=32,
 )
 
-# Override with a different GPU type
+# Manual override - use 2x L40S instead
 run = client.create_run(
-    base_model="meta-llama/Llama-3.1-8B",
-    gpu_config="l40s:1",  # Use L40S instead of A100
+    base_model="Qwen/Qwen2.5-7B",
+    gpu_config="L40S:2",  # Override auto-allocation
     lora_r=32,
 )
 
-# Use multiple GPUs (Note: multi-GPU support coming soon)
+# Use H100 for maximum performance
 run = client.create_run(
-    base_model="meta-llama/Llama-3.1-8B",
-    gpu_config="a100-80gb:2",  # Use 2x A100
+    base_model="meta-llama/Llama-3.1-70B",
+    gpu_config="H100:4",  # Use 4x H100 for fastest training
     lora_r=32,
 )
 ```
 
-**Supported GPU Types:**
+**Supported GPU types:**
 
-- `l40s:1` - NVIDIA L40S (48GB)
-- `a100-80gb:1` - NVIDIA A100 80GB
-- `a100:1` - NVIDIA A100 40GB
-- `h100:1` - NVIDIA H100 (80GB)
-- `t4:1` - NVIDIA T4 (16GB)
-- `a10g:1` - NVIDIA A10G (24GB)
-
-**GPU Count:** Currently only single GPU (`count=1`) is supported. Multi-GPU training (count > 1) is coming soon!
+- **L40S** - NVIDIA L40S (48GB) - Cost-effective for most models
+- **A100** - NVIDIA A100 (40GB) - Good balance of performance and cost
+- **A100-80GB** - NVIDIA A100 (80GB) - For larger models and multi-GPU
+- **H100** - NVIDIA H100 (80GB) - Maximum performance
+- **T4** - NVIDIA T4 (16GB) - Budget option for small models
+- **A10G** - NVIDIA A10G (24GB) - Good for small-medium models
 
 ## Custom LoRA Configuration
 
@@ -267,6 +270,7 @@ models:
 ```
 
 **GPU Configuration Format:**
+
 - Single GPU: `"l40s:1"`, `"a100-80gb:1"`, `"h100:1"`
 - Multi-GPU: `"a100-80gb:4"`, `"h100:8"`
 - The system automatically uses FSDP for multi-GPU setups
@@ -289,6 +293,7 @@ Signal uses a hybrid approach for maximum efficiency:
   - Mixed precision (bfloat16) training
 
 **Modal GPU Allocation:**
+
 - GPU resources are allocated dynamically per run
 - Uses Modal's `with_options()` for runtime GPU selection
 - Each training primitive (`forward_backward`, `optim_step`) runs on the same GPU configuration

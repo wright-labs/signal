@@ -15,17 +15,13 @@ def tokenize_batch(
         # Check if batch is preference pairs (has 'prompt', 'chosen', 'rejected')
         if batch_data and all('prompt' in ex and 'chosen' in ex and 'rejected' in ex 
                               for ex in batch_data):
-            # Import DPO utilities if needed
-            try:
-                from modal_runtime.preference_utils import format_preference_pairs_for_dpo
-                return format_preference_pairs_for_dpo(
-                    preference_pairs=batch_data,
-                    tokenizer=tokenizer,
-                    max_seq_length=max_seq_length,
-                )
-            except ImportError:
-                print("Warning: DPO utilities not available, falling back to standard tokenization")
-    
+            from modal_runtime.utils.preference_utils import format_preference_pairs_for_dpo
+            return format_preference_pairs_for_dpo(
+                preference_pairs=batch_data,
+                tokenizer=tokenizer,
+                max_seq_length=max_seq_length,
+            )
+        
     # Standard tokenization for causal LM
     texts = []
     
@@ -33,7 +29,6 @@ def tokenize_batch(
         if "text" in example:
             texts.append(example["text"])
         elif "messages" in example:
-            # Apply chat template if messages format
             text = tokenizer.apply_chat_template(
                 example["messages"],
                 tokenize=False,
@@ -43,7 +38,6 @@ def tokenize_batch(
         else:
             raise ValueError("Each example must have 'text' or 'messages' field")
     
-    # Tokenize
     encoded = tokenizer(
         texts,
         padding=True,

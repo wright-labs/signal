@@ -5,17 +5,13 @@ This module defines:
 - Docker images for training and inference
 - Persistent volumes for data storage
 - Secrets for API keys and credentials
-
-NOTE: All ML dependencies (torch, transformers, peft, etc.) are installed
-in the Modal Docker images below. They are NOT in requirements-api.txt since
-the API server only needs FastAPI and client libraries.
 """
 from modal import App, Image as ModalImage, Volume, Secret
 from pathlib import Path
 
 # Configuration
 
-HOURS = 60 * 60
+HOURS = 60 * 60 # this is the default timeout for the modal app
 
 # Modal app, volumes, and secrets
 
@@ -28,13 +24,9 @@ VOLUME_CONFIG = {
     "/data": data_volume,
 }
 
-# HuggingFace and WandB secrets
+# Secrets
 huggingface_secret = Secret.from_name("secrets-hf-wandb")
-
-# AWS S3 credentials for artifact storage
 s3_secret = Secret.from_name("aws-s3-credentials")
-
-# API secrets for internal service-to-service communication
 api_secret = Secret.from_name("signal-api-secrets")
 
 # Docker image configurations
@@ -101,5 +93,5 @@ INFERENCE_IMAGE = TRAINING_IMAGE
 
 # Import training session classes to register stateful container classes
 # This must be at the end after all images and secrets are defined
-import modal_runtime.training_session  # noqa: F401, E402  # Now supports multi-GPU!
-# import modal_runtime.multi_gpu_session  # noqa: F401, E402  # (Disabled - using training_session.py)
+# import modal_runtime.training_session  # noqa: F401, E402  # Single class (disabled in favor of multi_gpu_session)
+import modal_runtime.multi_gpu_session  # noqa: F401, E402  # Multiple GPU config classes
