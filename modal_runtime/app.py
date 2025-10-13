@@ -72,6 +72,7 @@ TRAINING_IMAGE = (
             "sentencepiece",          # Tokenization
             "protobuf",               # Protocol buffers
             "datasets",               # HuggingFace datasets
+            "nvidia-ml-py3",          # GPU monitoring (pynvml)
             "wandb",                  # Experiment tracking
             "boto3",                  # AWS S3 for artifact storage
             "botocore",               # AWS core library
@@ -98,8 +99,7 @@ TRAINING_IMAGE = (
 # The training image works fine for inference too
 INFERENCE_IMAGE = TRAINING_IMAGE
 
-# Import primitives to register functions
-
+# Import training session classes to register stateful container classes
 # This must be at the end after all images and secrets are defined
-# Importing primitives registers the Modal functions with the app
-import modal_runtime.primitives  # noqa: F401, E402
+import modal_runtime.training_session  # noqa: F401, E402  # Single GPU (legacy)
+import modal_runtime.multi_gpu_session  # noqa: F401, E402  # Multi-GPU support

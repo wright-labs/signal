@@ -60,39 +60,58 @@ from api.schemas import (
 
 import modal
 
-_modal_functions_cache = {}
+_training_session_cls_cache = {}
 
-def get_modal_function(name: str):
-    """Get Modal function by name from deployed environment (cached)."""
-    if name in _modal_functions_cache:
-        return _modal_functions_cache[name]
+def get_training_session(run_id: str, gpu_config: str = "l40s:1"):
+    """Get stateful training session instance for a run with specific GPU config.
+    
+    Args:
+        run_id: Run identifier
+        gpu_config: GPU configuration (e.g., "l40s:2", "a100:4")
+    
+    Modal automatically routes calls with same instance to same container.
+    """
+    global _training_session_cls_cache
     
     try:
-        func = modal.Function.from_name("signal", name, environment_name="main")
-        _modal_functions_cache[name] = func
-        return func
+        # Map GPU config to class name
+        gpu_to_class = {
+            "l40s:1": "TrainingSession_L40S_1",
+            "l40s:2": "TrainingSession_L40S_2",
+            "l40s:4": "TrainingSession_L40S_4",
+            "a100:1": "TrainingSession_A100_1",
+            "a100:2": "TrainingSession_A100_2",
+            "a100:4": "TrainingSession_A100_4",
+            "h100:1": "TrainingSession_H100_1",
+            "h100:2": "TrainingSession_H100_2",
+        }
+        
+        class_name = gpu_to_class.get(gpu_config)
+        if class_name is None:
+            # Fallback to single GPU
+            logging.warning(f"GPU config '{gpu_config}' not found, using l40s:1")
+            class_name = "TrainingSession_L40S_1"
+            gpu_config = "l40s:1"
+        
+        # Cache per GPU config
+        if gpu_config not in _training_session_cls_cache:
+            _training_session_cls_cache[gpu_config] = modal.Cls.from_name(
+                "signal", 
+                class_name, 
+                environment_name="main"
+            )
+        
+        # Return new instance
+        return _training_session_cls_cache[gpu_config]()
+        
     except Exception as e:
         import traceback
-        logging.error(f"Failed to lookup Modal function '{name}': {e}")
+        logging.error(f"Failed to lookup TrainingSession class for {gpu_config}: {e}")
         logging.error(f"Full traceback: {traceback.format_exc()}")
-        logging.error(f"Modal token ID: {os.getenv('MODAL_TOKEN_ID', 'NOT SET')[:10]}...")
         raise HTTPException(
             status_code=500,
-            detail=f"Training infrastructure not available. Please ensure Modal functions are deployed."
+            detail=f"Training infrastructure not available for GPU config '{gpu_config}'. Please ensure Modal is deployed."
         )
-
-
-# Function wrappers for consistent interface
-modal_create_run = lambda: get_modal_function("create_run")
-modal_forward_backward = lambda: get_modal_function("forward_backward")
-modal_optim_step = lambda: get_modal_function("optim_step")
-modal_sample = lambda: get_modal_function("sample")
-modal_save_state = lambda: get_modal_function("save_state")
-modal_tokenize = lambda: get_modal_function("tokenize")
-modal_detokenize = lambda: get_modal_function("detokenize")
-modal_get_tokenizer_info = lambda: get_modal_function("get_tokenizer_info")
-modal_get_model_info = lambda: get_modal_function("get_model_info")
-modal_apply_chat_template = lambda: get_modal_function("apply_chat_template")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -656,12 +675,12 @@ async def create_run(
         logging.info(f"Creating run with GPU config: {gpu_config}")
         
         try:
-            result = modal_create_run().remote(
+            # Initialize stateful container with GPU config
+            session = get_training_session(run_id, gpu_config=gpu_config)
+            result = session.initialize.remote(
                 user_id=user_id,
                 run_id=run_id,
                 base_model=config.base_model,
-                framework=framework,
-                gpu_config=gpu_config,
                 lora_r=config.lora_r,
                 lora_alpha=config.lora_alpha,
                 lora_dropout=config.lora_dropout,
@@ -672,7 +691,10 @@ async def create_run(
                 max_seq_length=config.max_seq_length,
                 bf16=config.bf16,
                 gradient_checkpointing=config.gradient_checkpointing,
-                integrations=integrations,  # Pass decrypted integrations to Modal
+                load_in_8bit=False,
+                load_in_4bit=True,
+                accumulation_steps=1,
+                auto_checkpoint_interval=100,
             )
             
             # Update registry to running status ONLY if Modal succeeds
@@ -732,12 +754,10 @@ async def forward_backward(
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
         
-        result = modal_forward_backward().remote(
-            user_id=user_id,
-            run_id=run_id,
+        # Use stateful container (fast, model already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        result = session.forward_backward.remote(
             batch_data=fb_request.batch_data,
-            step=current_step,
-            accumulate=fb_request.accumulate,
             loss_fn=fb_request.loss_fn,
             loss_kwargs=fb_request.loss_kwargs,
         )
@@ -792,10 +812,9 @@ async def optim_step(
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
         
-        result = modal_optim_step().remote(
-            user_id=user_id,
-            run_id=run_id,
-            step=current_step,
+        # Use stateful container (fast, optimizer already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        result = session.optim_step.remote(
             learning_rate=request.learning_rate,
         )
         
@@ -847,14 +866,14 @@ async def sample(
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
         
-        result = modal_sample().remote(
-            user_id=user_id,
-            run_id=run_id,
+        # Use stateful container (fast, model already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        result = session.sample.remote(
             prompts=request.prompts,
-            step=current_step,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
             top_p=request.top_p,
+            top_k=request.top_k if hasattr(request, 'top_k') else None,
             return_logprobs=request.return_logprobs,
         )
         
@@ -875,6 +894,34 @@ async def sample(
         )
 
 
+@app.get("/runs/{run_id}/session_state")
+@limiter.limit("100/minute")
+async def get_session_state(
+    run_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Get current stateful session state."""
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config and session state
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        state = session.get_state.remote()
+        
+        return state
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error getting session state for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get session state."
+        )
+
+
 @app.post("/runs/{run_id}/sample/stream")
 @limiter.limit("20/minute")
 async def sample_stream(
@@ -884,73 +931,11 @@ async def sample_stream(
     user_id: str = Depends(verify_auth),
 ):
     """Stream generated text token-by-token using Server-Sent Events."""
-    from sse_starlette.sse import EventSourceResponse
-    import json
-    
-    try:
-        # Verify run belongs to user
-        run = await get_authorized_run(run_id, user_id)
-        
-        # Get current step
-        current_step = run["current_step"]
-        
-        # Use single GPU for inference
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
-        
-        # Check balance before expensive operations
-        await check_and_charge_incremental(run_id, user_id, gpu_config)
-        
-        # Get Modal function
-        modal_sample_stream = get_modal_function("sample_stream")
-        
-        async def event_generator():
-            """Generate SSE events from Modal streaming function."""
-            try:
-                # Call Modal function and iterate over generator
-                for chunk_data in modal_sample_stream.remote_gen(
-                    user_id=user_id,
-                    run_id=run_id,
-                    prompt=request.prompt,
-                    step=current_step,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                    top_p=request.top_p,
-                ):
-                    # Convert chunk to StreamChunk model
-                    chunk = StreamChunk(**chunk_data)
-                    # Yield as SSE event
-                    yield {
-                        "event": "message",
-                        "data": chunk.model_dump_json(),
-                    }
-                    
-                    # If finished, break
-                    if chunk.is_finished:
-                        break
-                        
-            except Exception as e:
-                logging.exception(f"Error in streaming for run {run_id}: {e}")
-                error_chunk = StreamChunk(
-                    token="",
-                    token_id=0,
-                    logprob=None,
-                    is_finished=True,
-                )
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": str(e)}),
-                }
-        
-        return EventSourceResponse(event_generator())
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception(f"Error setting up streaming for run {run_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Streaming setup failed. Please try again."
-        )
+    # TODO: Implement streaming with stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="Streaming is temporarily unavailable. Use /runs/{run_id}/sample instead."
+    )
 
 
 @app.post("/runs/{run_id}/embeddings", response_model=EmbeddingsResponse)
@@ -962,44 +947,11 @@ async def generate_embeddings(
     user_id: str = Depends(verify_auth),
 ):
     """Generate embeddings from the model."""
-    try:
-        # Verify run belongs to user
-        run = await get_authorized_run(run_id, user_id)
-        
-        # Get current step
-        current_step = run["current_step"]
-        
-        # Use single GPU for inference
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
-        
-        # Check balance before expensive operations
-        await check_and_charge_incremental(run_id, user_id, gpu_config)
-        
-        # Get Modal function
-        modal_embeddings = get_modal_function("embeddings")
-        
-        result = modal_embeddings.remote(
-            user_id=user_id,
-            run_id=run_id,
-            texts=request.texts,
-            step=current_step,
-            layer=request.layer,
-            pooling=request.pooling,
-        )
-        
-        return EmbeddingsResponse(
-            embeddings=result["embeddings"],
-            dimensions=result["dimensions"],
-        )
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception(f"Error generating embeddings for run {run_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Embeddings generation failed. Please try again."
-        )
+    # TODO: Implement embeddings with stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="Embeddings endpoint is temporarily unavailable."
+    )
 
 
 @app.post("/runs/{run_id}/save_state", response_model=SaveStateResponse)
@@ -1024,14 +976,12 @@ async def save_state(
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
         
-        result = modal_save_state().remote(
-            user_id=user_id,
-            run_id=run_id,
-            step=current_step,
+        # Use stateful container's save_state method
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        result = session.save_state.remote(
             mode=request.mode,
             push_to_hub=request.push_to_hub,
             hub_model_id=request.hub_model_id,
-            training_metrics=None,  # Could fetch from registry if needed
         )
         
         # Record S3 artifact in database
@@ -1053,14 +1003,14 @@ async def save_state(
                 logging.warning(f"Failed to record artifact in database for run {run_id}")
         
         return SaveStateResponse(
-            artifact_uri=result["artifact_uri"],
+            artifact_uri=result.get("local_path", ""),
             local_path=result.get("local_path"),
-            checkpoint_path=result.get("local_path", result["artifact_uri"]),  # Backward compat
+            checkpoint_path=result.get("local_path", ""),
             s3_uri=result.get("s3_uri"),
             download_url=result.get("download_url"),
             download_expires_at=result.get("download_expires_at"),
             manifest=result.get("manifest"),
-            pushed_to_hub=result["pushed_to_hub"],
+            pushed_to_hub=result.get("pushed_to_hub", False),
             hub_model_id=result.get("hub_model_id"),
         )
     
@@ -1081,25 +1031,11 @@ async def tokenize(
     user_id: str = Depends(verify_auth),
 ):
     """Tokenize text using the model's tokenizer."""
-    try:
-        # Verify run belongs to user
-        _ = await get_authorized_run(run_id, user_id)
-        
-        # Call Modal function
-        result = modal_tokenize().remote(
-            user_id=user_id,
-            run_id=run_id,
-            text=request.text,
-            add_special_tokens=request.add_special_tokens,
-        )
-        
-        return TokenizeResponse(
-            token_ids=result["token_ids"],
-            tokens=result["tokens"],
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO: Implement using stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="This endpoint is temporarily unavailable during the stateful migration. Use the training endpoints instead."
+    )
 
 
 @app.post("/runs/{run_id}/detokenize", response_model=DetokenizeResponse)
@@ -1109,23 +1045,11 @@ async def detokenize(
     user_id: str = Depends(verify_auth),
 ):
     """Detokenize token IDs using the model's tokenizer."""
-    try:
-        # Verify run belongs to user
-        _ = await get_authorized_run(run_id, user_id)
-        
-        # Call Modal function
-        result = modal_detokenize().remote(
-            user_id=user_id,
-            run_id=run_id,
-            token_ids=request.token_ids,
-        )
-        
-        return DetokenizeResponse(
-            text=result["text"],
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO: Implement using stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="This endpoint is temporarily unavailable during the stateful migration."
+    )
 
 
 @app.get("/runs/{run_id}/tokenizer_info", response_model=TokenizerInfoResponse)
@@ -1134,28 +1058,11 @@ async def get_tokenizer_info(
     user_id: str = Depends(verify_auth),
 ):
     """Get tokenizer configuration information."""
-    try:
-        # Verify run belongs to user
-        _ = await get_authorized_run(run_id, user_id)
-        
-        # Call Modal function
-        result = modal_get_tokenizer_info().remote(
-            user_id=user_id,
-            run_id=run_id,
-        )
-        
-        return TokenizerInfoResponse(
-            vocab_size=result["vocab_size"],
-            model_max_length=result.get("model_max_length"),
-            bos_token_id=result.get("bos_token_id"),
-            eos_token_id=result.get("eos_token_id"),
-            pad_token_id=result.get("pad_token_id"),
-            unk_token_id=result.get("unk_token_id"),
-            special_tokens=result.get("special_tokens", {}),
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO: Implement using stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="This endpoint is temporarily unavailable during the stateful migration."
+    )
 
 
 @app.get("/runs/{run_id}/model_info", response_model=ModelInfoResponse)
@@ -1164,31 +1071,11 @@ async def get_model_info(
     user_id: str = Depends(verify_auth),
 ):
     """Get model architecture information."""
-    try:
-        # Verify run belongs to user
-        _ = await get_authorized_run(run_id, user_id)
-        
-        # Call Modal function
-        result = modal_get_model_info().remote(
-            user_id=user_id,
-            run_id=run_id,
-        )
-        
-        return ModelInfoResponse(
-            base_model=result["base_model"],
-            architecture=result["architecture"],
-            num_parameters=result["num_parameters"],
-            num_trainable_parameters=result["num_trainable_parameters"],
-            hidden_size=result.get("hidden_size"),
-            num_layers=result.get("num_layers"),
-            num_attention_heads=result.get("num_attention_heads"),
-            vocab_size=result.get("vocab_size"),
-            max_position_embeddings=result.get("max_position_embeddings"),
-            chat_template=result.get("chat_template"),
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO: Implement using stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="This endpoint is temporarily unavailable during the stateful migration."
+    )
 
 
 @app.post("/runs/{run_id}/apply_chat_template", response_model=ApplyChatTemplateResponse)
@@ -1198,25 +1085,11 @@ async def apply_chat_template(
     user_id: str = Depends(verify_auth),
 ):
     """Apply the model's chat template to format messages."""
-    try:
-        # Verify run belongs to user
-        _ = await get_authorized_run(run_id, user_id)
-        
-        # Call Modal function
-        result = modal_apply_chat_template().remote(
-            user_id=user_id,
-            run_id=run_id,
-            messages=request.messages,
-            add_generation_prompt=request.add_generation_prompt,
-        )
-        
-        return ApplyChatTemplateResponse(
-            text=result["text"],
-            token_ids=result["token_ids"],
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO: Implement using stateful session
+    raise HTTPException(
+        status_code=501,
+        detail="This endpoint is temporarily unavailable during the stateful migration."
+    )
 
 
 @app.get("/runs/{run_id}/status", response_model=RunStatus)

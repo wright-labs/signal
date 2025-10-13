@@ -9,17 +9,7 @@ def causal_lm_loss(
     batch: Dict[str, torch.Tensor],
     **kwargs
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
-    """
-    Standard causal language modeling loss.
-    
-    Args:
-        model: Model instance
-        batch: Tokenized batch with input_ids, attention_mask
-        **kwargs: Additional arguments (unused)
-        
-    Returns:
-        Tuple of (loss, metrics_dict)
-    """
+    """Standard causal language modeling loss."""
     outputs = model(
         input_ids=batch["input_ids"],
         attention_mask=batch.get("attention_mask"),
@@ -47,22 +37,11 @@ def dpo_loss(
     """
     Direct Preference Optimization (DPO) loss.
     
-    Based on: "Direct Preference Optimization: Your Language Model is 
-    Secretly a Reward Model" (Rafailov et al., 2023)
-    
-    Args:
-        model: Policy model being trained
-        batch: Dict with:
-            - chosen_input_ids: Preferred completions
-            - chosen_attention_mask: Mask for chosen
-            - rejected_input_ids: Rejected completions  
-            - rejected_attention_mask: Mask for rejected
-        beta: Temperature parameter for DPO (default: 0.1)
-        reference_model: Reference policy model (if None, uses model's init state)
-        label_smoothing: Label smoothing factor (default: 0.0)
-        
-    Returns:
-        Tuple of (loss, metrics_dict)
+    The batch should contain the following keys:
+        - chosen_input_ids: Preferred completions
+        - chosen_attention_mask: Mask for chosen
+        - rejected_input_ids: Rejected completions  
+        - rejected_attention_mask: Mask for rejected
     """
     # Get log probabilities for chosen completions
     chosen_outputs = model(
