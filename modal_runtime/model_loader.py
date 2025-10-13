@@ -21,6 +21,7 @@ def load_model_and_tokenizer(
     max_seq_length: int = 2048,
     bf16: bool = True,
     gradient_checkpointing: bool = True,
+    device_map: Optional[str] = "auto",
 ) -> Tuple[Any, Any]:
     """Load model and tokenizer for training.
     
@@ -93,7 +94,7 @@ def load_model_and_tokenizer(
         model_name,
         quantization_config=quantization_config,
         torch_dtype=torch.bfloat16 if bf16 else torch.float16,
-        device_map="auto",
+        device_map=device_map,
         trust_remote_code=True,
     )
     

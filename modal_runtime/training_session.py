@@ -43,13 +43,19 @@ from modal_runtime.utils import (
     find_latest_checkpoint,
     compute_forward_backward,
 )
+from modal_runtime.gpu_monitor import (
+    get_gpu_stats,
+    get_gpu_summary,
+    setup_multi_gpu_model,
+    print_gpu_stats,
+)
 
 
 @app.cls(
     image=TRAINING_IMAGE,
     volumes=VOLUME_CONFIG,
     secrets=[huggingface_secret, s3_secret],
-    gpu="l40s:1",  # Default, can be overridden
+    gpu="L40S:2",  # 2x L40S GPUs (use "L40S:1" for single GPU)
     timeout=2 * HOURS,
     container_idle_timeout=20 * 60,  # 20 minutes idle before shutdown
     allow_concurrent_inputs=10,  # Handle multiple requests to same container
@@ -84,6 +90,8 @@ class TrainingSession:
     last_activity_time: float = None
     should_monitor: bool = False
     monitor_thread: threading.Thread = None
+    num_gpus: int = 0
+    is_multi_gpu: bool = False
     
     @modal.enter()
     def container_startup(self):
@@ -95,6 +103,18 @@ class TrainingSession:
         print("=" * 80)
         print("CONTAINER STARTED")
         print("=" * 80)
+        
+        # Detect GPUs
+        if torch.cuda.is_available():
+            self.num_gpus = torch.cuda.device_count()
+            self.is_multi_gpu = self.num_gpus > 1
+            print(f"✓ Detected {self.num_gpus} GPU(s)")
+            for i in range(self.num_gpus):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_mem = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                print(f"  GPU {i}: {gpu_name} ({gpu_mem:.1f} GB)")
+        else:
+            print("⚠️  No CUDA GPUs detected!")
         
         # Start background monitoring thread for auto-checkpoint
         self.should_monitor = True
@@ -244,6 +264,8 @@ class TrainingSession:
             
             # Load model and tokenizer (THIS IS THE EXPENSIVE PART - 30-60s)
             print("\nLoading model and tokenizer...")
+            # For multi-GPU, load on cuda:0 only (DataParallel will distribute)
+            device_map = "cuda:0" if self.is_multi_gpu else "auto"
             self.model, self.tokenizer = load_model_and_tokenizer(
                 model_name=base_model,
                 load_in_8bit=load_in_8bit,
@@ -251,6 +273,7 @@ class TrainingSession:
                 max_seq_length=max_seq_length,
                 bf16=bf16,
                 gradient_checkpointing=gradient_checkpointing,
+                device_map=device_map,
             )
             
             # Apply LoRA adapters
@@ -262,6 +285,14 @@ class TrainingSession:
                 lora_dropout=lora_dropout,
                 lora_target_modules=lora_target_modules,
             )
+            
+            # Multi-GPU setup
+            if self.is_multi_gpu:
+                print(f"\n🚀 Setting up multi-GPU training ({self.num_gpus} GPUs)")
+                self.model = setup_multi_gpu_model(self.model, strategy="data_parallel")
+                print(f"✓ Model distributed across {self.num_gpus} GPUs via DataParallel")
+            else:
+                print(f"\n📊 Single GPU mode")
             
             # Load checkpoint if resuming
             if resume_from_step is not None:
@@ -325,6 +356,8 @@ class TrainingSession:
                 "current_step": self.current_step,
                 "total_params": total_params,
                 "trainable_params": trainable_params,
+                "num_gpus": self.num_gpus,
+                "is_multi_gpu": self.is_multi_gpu,
                 "config": self.config,
             }
             
@@ -518,8 +551,11 @@ class TrainingSession:
             print(f"Step: {self.current_step}")
             print(f"Prompts: {len(prompts)}")
             
+            # Use base model for generation (unwrap if DataParallel)
+            model_to_use = self.model.module if self.is_multi_gpu else self.model
+            
             # Switch to eval mode
-            self.model.eval()
+            model_to_use.eval()
             
             outputs = []
             all_token_ids = []
@@ -533,11 +569,11 @@ class TrainingSession:
                     inputs = self.tokenizer(
                         prompt,
                         return_tensors="pt"
-                    ).to(self.model.device)
+                    ).to(model_to_use.device)
                     
                     # Generate
                     if return_logprobs:
-                        generation_output = self.model.generate(
+                        generation_output = model_to_use.generate(
                             **inputs,
                             max_new_tokens=max_tokens,
                             temperature=temperature,
@@ -551,7 +587,7 @@ class TrainingSession:
                         generated_ids = generation_output.sequences[0]
                         # TODO: Extract logprobs from scores
                     else:
-                        generated_ids = self.model.generate(
+                        generated_ids = model_to_use.generate(
                             **inputs,
                             max_new_tokens=max_tokens,
                             temperature=temperature,
@@ -570,7 +606,7 @@ class TrainingSession:
                     all_token_ids.append(generated_ids.cpu().tolist())
             
             # Switch back to train mode
-            self.model.train()
+            model_to_use.train()
             
             print(f"\n{'=' * 80}")
             print(f"✓ GENERATED {len(outputs)} COMPLETIONS")
@@ -683,9 +719,12 @@ class TrainingSession:
         paths = get_run_paths(self.user_id, self.run_id)
         checkpoint_path = paths["lora_adapters"] / f"step_{self.current_step}"
         
+        # Unwrap model if multi-GPU
+        model_to_save = self.model.module if self.is_multi_gpu else self.model
+        
         # Save LoRA checkpoint
         save_lora_checkpoint(
-            model=self.model,
+            model=model_to_save,
             save_path=str(checkpoint_path),
             tokenizer=self.tokenizer,
         )

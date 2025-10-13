@@ -103,6 +103,9 @@ def create_training_session_class(gpu_config: str, class_name: str):
         @modal.enter()
         def container_startup(self):
             """Called when container starts."""
+            # Capture gpu_config from outer scope
+            self.gpu_config = gpu_config
+            
             print("=" * 80)
             print(f"CONTAINER STARTED - GPU Config: {self.gpu_config}")
             print("=" * 80)

@@ -101,5 +101,5 @@ INFERENCE_IMAGE = TRAINING_IMAGE
 
 # Import training session classes to register stateful container classes
 # This must be at the end after all images and secrets are defined
-import modal_runtime.training_session  # noqa: F401, E402  # Single GPU (legacy)
-import modal_runtime.multi_gpu_session  # noqa: F401, E402  # Multi-GPU support
+import modal_runtime.training_session  # noqa: F401, E402  # Now supports multi-GPU!
+# import modal_runtime.multi_gpu_session  # noqa: F401, E402  # (Disabled - using training_session.py)

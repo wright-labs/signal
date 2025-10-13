@@ -130,6 +130,11 @@ def setup_multi_gpu_model(model, strategy: str = "data_parallel"):
     print(f"Setting up model for {device_count} GPUs with {strategy} strategy...")
     
     if strategy == "data_parallel":
+        # Ensure model is on cuda:0 first (required for DataParallel)
+        if not next(model.parameters()).is_cuda or next(model.parameters()).device.index != 0:
+            print(f"  Moving model to cuda:0...")
+            model = model.to('cuda:0')
+        
         # Simple DataParallel (easiest, but not most efficient)
         model = torch.nn.DataParallel(model)
         print(f"✓ Model wrapped with DataParallel across {device_count} GPUs")

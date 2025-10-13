@@ -18,6 +18,10 @@ def causal_lm_loss(
     
     loss = outputs.loss
     
+    # Handle DataParallel (loss is a tensor with one element per GPU)
+    if loss.dim() > 0:
+        loss = loss.mean()
+    
     metrics = {
         "loss": loss.item(),
         "perplexity": torch.exp(loss).item(),
