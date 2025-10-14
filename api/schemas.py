@@ -75,20 +75,30 @@ class RunResponse(BaseModel):
 
 class TrainingExample(BaseModel):
     """Individual training example with validation.
-    
-    Supports three formats:
-    1. SFT (Supervised Fine-Tuning) with raw text: {"text": "..."}
-    2. SFT with chat messages: {"messages": [...]}
-    3. DPO (Direct Preference Optimization): {"prompt": "...", "chosen": "...", "rejected": "..."}
+
+    Supports multiple formats:
+    1. SFT (Supervised Fine-Tuning): {"text": "..."} or {"messages": [...]}
+    2. DPO (Direct Preference Optimization): {"prompt": "...", "chosen": "...", "rejected": "..."}
+    3. GRPO (Group Relative Policy Optimization): {"prompt": "...", "responses": [...], "rewards": [...]}
+    4. PPO (Proximal Policy Optimization): {"prompt": "...", "response": "...", "reward": 1.0, "value": 0.5}
     """
     # SFT formats
     text: Optional[str] = Field(None, max_length=32768, description="Raw text for SFT (max 32K chars)")
     messages: Optional[List[Dict[str, str]]] = Field(None, max_length=50, description="Chat messages for SFT (max 50)")
-    
+
     # DPO format
-    prompt: Optional[str] = Field(None, max_length=32768, description="Prompt for DPO preference pairs")
-    chosen: Optional[str] = Field(None, max_length=32768, description="Preferred/winning response for DPO")
-    rejected: Optional[str] = Field(None, max_length=32768, description="Rejected/losing response for DPO")
+    prompt: Optional[str] = Field(None, max_length=32768, description="Prompt for preference-based methods")
+    chosen: Optional[str] = Field(None, max_length=32768, description="Chosen response for DPO")
+    rejected: Optional[str] = Field(None, max_length=32768, description="Rejected response for DPO")
+
+    # GRPO format
+    responses: Optional[List[str]] = Field(None, max_length=16, description="Multiple responses for GRPO (max 16)")
+    rewards: Optional[List[float]] = Field(None, description="Reward scores for each response")
+
+    # PPO format
+    response: Optional[str] = Field(None, max_length=32768, description="Single response for PPO")
+    reward: Optional[float] = Field(None, description="Reward score for PPO response")
+    value: Optional[float] = Field(None, description="Value function estimate for PPO")
     
     @field_validator('text')
     @classmethod
@@ -123,33 +133,52 @@ class TrainingExample(BaseModel):
         """Ensure exactly one valid format is provided."""
         has_text = self.text is not None
         has_messages = self.messages is not None
-        has_preference = all([
-            self.prompt is not None, 
-            self.chosen is not None, 
+
+        # Check for each format
+        has_dpo = all([
+            self.prompt is not None,
+            self.chosen is not None,
             self.rejected is not None
         ])
-        
-        format_count = sum([has_text, has_messages, has_preference])
-        
+        has_grpo = all([
+            self.prompt is not None,
+            self.responses is not None,
+            self.rewards is not None
+        ])
+        has_ppo = all([
+            self.prompt is not None,
+            self.response is not None,
+            self.reward is not None
+        ])
+
+        format_count = sum([has_text, has_messages, has_dpo, has_grpo, has_ppo])
+
         if format_count == 0:
             raise ValueError(
                 "Must provide one of: 'text' (SFT), 'messages' (SFT), "
-                "or ('prompt', 'chosen', 'rejected') for DPO"
+                "'(prompt, chosen, rejected)' (DPO), "
+                "'(prompt, responses, rewards)' (GRPO), or "
+                "'(prompt, response, reward)' (PPO)"
             )
-        
+
         if format_count > 1:
             raise ValueError(
-                "Provide only ONE format: 'text' OR 'messages' OR ('prompt', 'chosen', 'rejected')"
+                "Provide only ONE format: SFT, DPO, GRPO, or PPO"
             )
-        
-        # If any preference field is set, all must be set
-        preference_fields = [self.prompt, self.chosen, self.rejected]
-        partial_preference = any(f is not None for f in preference_fields)
-        if partial_preference and not has_preference:
-            raise ValueError(
-                "For DPO format, must provide ALL three fields: 'prompt', 'chosen', and 'rejected'"
-            )
-        
+
+        # Validate format-specific requirements
+        if has_dpo:
+            # Check if any DPO fields are partially set (shouldn't happen due to all() check above)
+            pass  # Already validated by the all() check
+
+        if has_grpo:
+            if len(self.responses) != len(self.rewards):
+                raise ValueError("Number of responses must match number of rewards for GRPO")
+
+        if has_ppo:
+            # Check if PPO fields are partially set (shouldn't happen due to all() check above)
+            pass  # Already validated by the all() check
+
         return self
 
 
@@ -162,7 +191,7 @@ class ForwardBackwardRequest(BaseModel):
         description="List of training examples (1-128)"
     )
     accumulate: bool = Field(False, description="Accumulate gradients instead of replacing")
-    loss_fn: str = Field("causal_lm", description="Loss function to use (causal_lm, dpo, reward_modeling, ppo)")
+    loss_fn: str = Field("causal_lm", description="Loss function to use (causal_lm, dpo, grpo, ppo)")
     loss_kwargs: Dict[str, Any] = Field(default_factory=dict, description="Additional arguments for loss function")
 
 

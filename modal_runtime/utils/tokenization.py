@@ -13,11 +13,35 @@ def tokenize_batch(
     # Handle preference pairs for DPO
     if loss_fn == "dpo":
         # Check if batch is preference pairs (has 'prompt', 'chosen', 'rejected')
-        if batch_data and all('prompt' in ex and 'chosen' in ex and 'rejected' in ex 
+        if batch_data and all('prompt' in ex and 'chosen' in ex and 'rejected' in ex
                               for ex in batch_data):
             from modal_runtime.utils.preference_utils import format_preference_pairs_for_dpo
             return format_preference_pairs_for_dpo(
                 preference_pairs=batch_data,
+                tokenizer=tokenizer,
+                max_seq_length=max_seq_length,
+            )
+
+    # Handle GRPO (Group Relative Policy Optimization)
+    if loss_fn == "grpo":
+        # Check if batch is GRPO format (has 'prompt', 'responses', 'rewards')
+        if batch_data and all('prompt' in ex and 'responses' in ex and 'rewards' in ex
+                              for ex in batch_data):
+            from modal_runtime.utils.preference_utils import format_grpo_samples
+            return format_grpo_samples(
+                grpo_data=batch_data,
+                tokenizer=tokenizer,
+                max_seq_length=max_seq_length,
+            )
+
+    # Handle PPO (Proximal Policy Optimization)
+    if loss_fn == "ppo":
+        # Check if batch is PPO format (has 'prompt', 'response', 'reward', 'value')
+        if batch_data and all('prompt' in ex and 'response' in ex and 'reward' in ex and 'value' in ex
+                              for ex in batch_data):
+            from modal_runtime.utils.preference_utils import format_ppo_samples
+            return format_ppo_samples(
+                ppo_data=batch_data,
                 tokenizer=tokenizer,
                 max_seq_length=max_seq_length,
             )
