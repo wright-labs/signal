@@ -5,6 +5,7 @@ This is a structured reading order designed to build your understanding progress
 ---
 
 ### **Phase 1: High-Level Overview (Start Here)**
+
 *Understand what the project does and its architecture*
 
 1. **`README.md`** - Main overview, features, and architecture. Read this to understand the product and its four primitives (forward_backward, optim_step, sample, save_state).
