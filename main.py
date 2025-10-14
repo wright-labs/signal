@@ -899,6 +899,7 @@ async def sample(
 @app.get("/runs/{run_id}/session_state")
 @limiter.limit("100/minute")
 async def get_session_state(
+    request: Request,
     run_id: str,
     user_id: str = Depends(verify_auth),
 ):
