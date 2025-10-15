@@ -191,8 +191,27 @@ class ForwardBackwardRequest(BaseModel):
         description="List of training examples (1-128)"
     )
     accumulate: bool = Field(False, description="Accumulate gradients instead of replacing")
-    loss_fn: str = Field("causal_lm", description="Loss function to use (causal_lm, dpo, grpo, ppo)")
+    loss_fn: str = Field("causal_lm", description="Loss function to use (causal_lm, dpo, grpo, ppo, enhanced_ppo, importance_sampling, conservative_ppo, reward_modeling)")
     loss_kwargs: Dict[str, Any] = Field(default_factory=dict, description="Additional arguments for loss function")
+    
+    # Futures support
+    request_id: Optional[str] = Field(None, description="Request ID for futures tracking (auto-generated if not provided)")
+    
+    # RL-specific fields
+    old_log_probs: Optional[List[float]] = Field(None, description="Old log probs from policy rollout (for PPO)")
+    rewards: Optional[List[float]] = Field(None, description="Rewards per example")
+    values: Optional[List[float]] = Field(None, description="Value function estimates (for PPO)")
+    old_values: Optional[List[float]] = Field(None, description="Old value estimates for value clipping")
+    advantages: Optional[List[float]] = Field(None, description="Pre-computed advantages")
+    behavior_log_probs: Optional[List[float]] = Field(None, description="Behavior policy log probs (for importance sampling)")
+    
+    # Reference model for KL penalty
+    reference_model: Optional[str] = Field(None, description="Reference model name for KL divergence penalty")
+    
+    # GAE parameters
+    use_gae: bool = Field(False, description="Use Generalized Advantage Estimation")
+    gamma: float = Field(0.99, description="Discount factor for GAE")
+    gae_lambda: float = Field(0.95, description="GAE lambda parameter")
 
 
 class ForwardBackwardResponse(BaseModel):
@@ -201,6 +220,14 @@ class ForwardBackwardResponse(BaseModel):
     step: int
     grad_norm: Optional[float] = None
     grad_stats: Optional[Dict[str, float]] = None
+    
+    # Futures support
+    request_id: Optional[str] = Field(None, description="Request ID for futures tracking")
+    status: str = Field("completed", description="Request status: queued, running, completed, failed")
+    
+    # Comprehensive RL metrics
+    rl_metrics: Optional[Dict[str, float]] = Field(None, description="RL-specific metrics (policy_loss, value_loss, entropy, kl_divergence, etc.)")
+    metrics: Optional[Dict[str, float]] = Field(None, description="All training metrics")
 
 
 class OptimStepRequest(BaseModel):
@@ -366,3 +393,49 @@ class EmbeddingsResponse(BaseModel):
     """Response from embeddings generation."""
     embeddings: List[List[float]] = Field(..., description="List of embedding vectors")
     dimensions: int = Field(..., description="Dimensionality of embeddings")
+
+
+class RequestStatusResponse(BaseModel):
+    """Response for checking request status (futures support)."""
+    request_id: str = Field(..., description="Request ID")
+    run_id: str = Field(..., description="Run ID")
+    request_type: str = Field(..., description="Type of request (forward_backward, optim_step, etc.)")
+    status: str = Field(..., description="Request status: queued, running, completed, failed")
+    result: Optional[Dict[str, Any]] = Field(None, description="Result data (if completed)")
+    error: Optional[str] = Field(None, description="Error message (if failed)")
+    submitted_at: Optional[float] = Field(None, description="Submission timestamp")
+    started_at: Optional[float] = Field(None, description="Start timestamp")
+    completed_at: Optional[float] = Field(None, description="Completion timestamp")
+
+
+class EvaluateRequest(BaseModel):
+    """Request for policy evaluation."""
+    eval_prompts: List[str] = Field(..., min_items=1, max_items=100, description="Evaluation prompts (1-100)")
+    reference_model: Optional[str] = Field(None, description="Reference model for KL divergence")
+    max_tokens: int = Field(100, description="Maximum tokens to generate per prompt")
+    num_samples_per_prompt: int = Field(5, ge=1, le=20, description="Number of samples per prompt (1-20)")
+    temperature: float = Field(0.7, description="Sampling temperature")
+    top_p: float = Field(0.9, description="Nucleus sampling parameter")
+
+
+class EvaluateResponse(BaseModel):
+    """Response from policy evaluation."""
+    metrics: Dict[str, float] = Field(..., description="Evaluation metrics")
+    kl_divergence: Optional[float] = Field(None, description="KL divergence from reference")
+    perplexity: float = Field(..., description="Model perplexity")
+    entropy: float = Field(..., description="Policy entropy")
+    unique_token_ratio: float = Field(..., description="Unique token ratio (diversity)")
+    unique_bigram_ratio: float = Field(..., description="Unique bigram ratio")
+    unique_trigram_ratio: float = Field(..., description="Unique trigram ratio")
+    avg_length: float = Field(..., description="Average generation length")
+    num_samples: int = Field(..., description="Total number of samples evaluated")
+
+
+class QueueStatsResponse(BaseModel):
+    """Response with queue statistics."""
+    run_id: str = Field(..., description="Run ID")
+    total: int = Field(..., description="Total requests in queue")
+    queued: int = Field(..., description="Queued requests")
+    running: int = Field(..., description="Running requests")
+    completed: int = Field(..., description="Completed requests")
+    failed: int = Field(..., description="Failed requests")
