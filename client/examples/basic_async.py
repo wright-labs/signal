@@ -1,7 +1,7 @@
 """Basic asynchronous example of using the Signal SDK."""
 
 import asyncio
-from frontier_signal import AsyncSignalClient
+from rewardsignal import AsyncSignalClient
 
 async def main():
     # Use async context manager for automatic cleanup

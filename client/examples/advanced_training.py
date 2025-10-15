@@ -4,7 +4,7 @@ This example demonstrates how to use the advanced TrainingClient
 for fine-grained control over training with state tracking.
 """
 
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 
 def main():

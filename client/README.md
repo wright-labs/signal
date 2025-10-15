@@ -18,7 +18,7 @@ pip install frontier-signal[dev]
 ### Synchronous Client
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 # Initialize client
 client = SignalClient(
@@ -70,7 +70,7 @@ print(f"Saved to: {artifact['checkpoint_path']}")
 
 ```python
 import asyncio
-from frontier_signal import AsyncSignalClient
+from rewardsignal import AsyncSignalClient
 
 async def train():
     # Use async context manager for automatic cleanup
@@ -108,7 +108,7 @@ asyncio.run(train())
 ### Context Manager (Sync)
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 with SignalClient(api_key="sk-...") as client:
     run = client.create_run(base_model="meta-llama/Llama-3.2-3B")
@@ -273,7 +273,7 @@ The SDK provides **three levels of API** to match your expertise and needs:
 The simple API provides direct methods on the client for common operations:
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 client = SignalClient(api_key="sk-...")
 run = client.create_run(base_model="Qwen/Qwen2.5-3B")
@@ -289,7 +289,7 @@ client.sample(run.run_id, prompts)
 For production training, use the specialized `TrainingClient`:
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 client = SignalClient(api_key="sk-...")
 run = client.create_run(base_model="Qwen/Qwen2.5-3B")
@@ -332,7 +332,7 @@ training.save_checkpoint(mode="adapter")
 For production inference, use the specialized `InferenceClient`:
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 client = SignalClient(api_key="sk-...")
 
@@ -429,7 +429,7 @@ artifact = run.save_state(
 The SDK provides specific exceptions for different error types:
 
 ```python
-from frontier_signal import (
+from rewardsignal import (
     SignalAPIError,
     AuthenticationError,
     NotFoundError,
@@ -456,7 +456,7 @@ except SignalAPIError as e:
 The SDK includes full type annotations. Import schemas for type hints:
 
 ```python
-from frontier_signal import RunConfig, TrainingExample
+from rewardsignal import RunConfig, TrainingExample
 
 def prepare_batch(texts: List[str]) -> List[TrainingExample]:
     return [TrainingExample(text=t) for t in texts]

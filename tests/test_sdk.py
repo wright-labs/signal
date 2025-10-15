@@ -9,7 +9,7 @@ from pathlib import Path
 # Add client to path for local development
 sys.path.insert(0, str(Path(__file__).parent / "client"))
 
-from frontier_signal import SignalClient, SignalAPIError
+from rewardsignal import SignalClient, SignalAPIError
 
 
 def print_section(title: str):

@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from frontier_signal import InferenceClient
+from rewardsignal import InferenceClient
 
 
 class TestInferenceClientInit:

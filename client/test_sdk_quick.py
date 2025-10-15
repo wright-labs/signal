@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import sys
 sys.path.insert(0, '/Users/arav/Desktop/Coding/wright/signal/client')
 
-from frontier_signal import SignalClient, TrainingClient, InferenceClient
+from rewardsignal import SignalClient, TrainingClient, InferenceClient
 
 
 def test_simple_api():

@@ -65,7 +65,7 @@ Test the installation:
 
 ```python
 import frontier_signal
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 print(frontier_signal.__version__)  # Should print: 0.1.0
 ```
@@ -183,7 +183,7 @@ name = "frontier-signal-ml"  # or another available name
 ### Import name
 The package name on PyPI (`frontier-signal`) is different from the import name (`frontier_signal`). This is standard practice for packages with hyphens:
 - Install: `pip install frontier-signal`
-- Import: `import frontier_signal` or `from frontier_signal import SignalClient`
+- Import: `import frontier_signal` or `from rewardsignal import SignalClient`
 
 ### Missing files in distribution
 Ensure `MANIFEST.in` includes all necessary files. Check what's included:

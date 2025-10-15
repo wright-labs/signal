@@ -4,7 +4,7 @@ This example demonstrates how to use the advanced InferenceClient
 for batched generation, caching, and checkpoint comparison.
 """
 
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 
 def main():

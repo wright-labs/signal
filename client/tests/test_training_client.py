@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from frontier_signal import TrainingClient
+from rewardsignal import TrainingClient
 
 
 class TestTrainingClientInit:

@@ -244,7 +244,7 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 ### Use the API
 
 ```python
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 client = SignalClient(
     api_key="sk-...",  # Your API key

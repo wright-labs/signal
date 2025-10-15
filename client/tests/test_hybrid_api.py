@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from frontier_signal import SignalClient, TrainingClient, InferenceClient
+from rewardsignal import SignalClient, TrainingClient, InferenceClient
 
 
 class TestSignalClientFactoryMethods:

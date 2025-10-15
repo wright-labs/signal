@@ -8,7 +8,7 @@ This script tests the full multi-GPU pipeline:
 """
 import asyncio
 import time
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 import os
 
 # Test configurations

@@ -1,6 +1,6 @@
 """Basic synchronous example of using the Frontier Signal SDK."""
 
-from frontier_signal import SignalClient
+from rewardsignal import SignalClient
 
 # Initialize client
 client = SignalClient(
