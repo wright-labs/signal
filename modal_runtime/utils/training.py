@@ -11,14 +11,27 @@ def compute_forward_backward(
     loss_fn: str = "causal_lm",
     loss_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, Dict[str, float]]:
-    """Compute forward and backward pass with custom loss function.
+    """DEPRECATED: Compute forward and backward pass with custom loss function.
+    
+    This function is deprecated in favor of calling model() explicitly,
+    then compute_loss_from_outputs(), then loss.backward() in training sessions.
+    
+    Kept for backward compatibility with tests. Will be removed in future version.
     
     This function:
     1. Moves batch to model device
-    2. Computes loss using specified loss function
+    2. Computes loss using specified loss function (calls model internally)
     3. Performs backward pass to compute gradients
     4. Collects gradient statistics
     """
+    import warnings
+    warnings.warn(
+        "compute_forward_backward() is deprecated. "
+        "Call model() explicitly and use compute_loss_from_outputs() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
     from modal_runtime.loss_functions import compute_loss
     
     if loss_kwargs is None:

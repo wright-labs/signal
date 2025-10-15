@@ -322,20 +322,47 @@ class TrainingSessionBase:
                 max_length=self.config["max_seq_length"],
             )
             
-            # Forward-backward
-            loss, grad_stats = compute_forward_backward(
-                self.model,
-                inputs,
-                loss_fn=loss_fn,
-                loss_kwargs=loss_kwargs,
+            # Move to device
+            device = next(self.model.parameters()).device
+            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
+                      for k, v in inputs.items()}
+            
+            # Set model to training mode
+            self.model.train()
+            
+            # FORWARD PASS (explicit and clean)
+            outputs = self.model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+                labels=inputs.get("labels", inputs["input_ids"]),
             )
+            
+            # COMPUTE LOSS (separate step)
+            from modal_runtime.loss_functions import compute_loss_from_outputs
+            loss, loss_metrics = compute_loss_from_outputs(
+                outputs,
+                inputs.get("labels"),
+                loss_fn,
+                **loss_kwargs
+            )
+            
+            # BACKWARD PASS
+            loss.backward()
+            
+            # Compute gradient statistics
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), float('inf'))
+            
+            grad_stats = {
+                "grad_norm": grad_norm.item(),
+                **loss_metrics,
+            }
             
             # Track accumulation
             self.accumulation_count += 1
             
             return {
                 "status": "success",
-                "loss": loss,
+                "loss": loss.item(),
                 "step": self.current_step,
                 "accumulation_count": self.accumulation_count,
                 "grad_norm": grad_stats.get("grad_norm", 0.0),

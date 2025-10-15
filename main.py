@@ -1320,125 +1320,21 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.get("/runs/{run_id}/requests/{request_id}/status")
-async def check_request_status(
-    run_id: str,
-    request_id: str,
-    api_key: str = Depends(get_api_key),
-):
-    """Check the status of a queued/in-flight request (futures support).
-    
-    This endpoint enables the double-await pattern by allowing clients
-    to poll for request completion status.
-    """
-    # Authenticate
-    await auth_manager.verify_api_key(api_key)
-    user_info = await auth_manager.get_user_info(api_key)
-    
-    # Verify run ownership
-    run = await registry.get_run(run_id)
-    if not run or run.get("user_id") != user_info["id"]:
-        raise HTTPException(status_code=404, detail="Run not found")
-    
-    # Get request status from orchestrator
-    from api.request_orchestrator import get_orchestrator
-    orchestrator = get_orchestrator()
-    
-    status = orchestrator.get_request_status(run_id, request_id)
-    
-    if status is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Request {request_id} not found"
-        )
-    
-    return status
+# NOTE: These endpoints are deprecated - Modal handles futures natively
+# Removed as part of simplification (request_orchestrator.py deleted)
+#
+# @app.get("/runs/{run_id}/requests/{request_id}/status")
+# @app.get("/runs/{run_id}/queue/stats")
+#
+# Modal's .spawn() returns native futures that don't need server-side tracking
 
 
-@app.get("/runs/{run_id}/queue/stats")
-async def get_queue_stats(
-    run_id: str,
-    api_key: str = Depends(get_api_key),
-):
-    """Get queue statistics for a run.
-    
-    Returns information about queued, running, and completed requests.
-    """
-    # Authenticate
-    await auth_manager.verify_api_key(api_key)
-    user_info = await auth_manager.get_user_info(api_key)
-    
-    # Verify run ownership
-    run = await registry.get_run(run_id)
-    if not run or run.get("user_id") != user_info["id"]:
-        raise HTTPException(status_code=404, detail="Run not found")
-    
-    # Get queue stats from orchestrator
-    from api.request_orchestrator import get_orchestrator
-    orchestrator = get_orchestrator()
-    
-    stats = orchestrator.get_queue_depth(run_id)
-    stats["run_id"] = run_id
-    
-    return stats
-
-
-@app.post("/runs/{run_id}/evaluate")
-async def evaluate_policy(
-    run_id: str,
-    eval_request: "EvaluateRequest",
-    api_key: str = Depends(get_api_key),
-):
-    """Run comprehensive policy evaluation.
-    
-    Evaluates the current policy on a set of prompts and returns metrics including:
-    - KL divergence from reference policy (if reference_model provided)
-    - Perplexity
-    - Entropy
-    - Generation diversity metrics
-    """
-    # Authenticate
-    await auth_manager.verify_api_key(api_key)
-    user_info = await auth_manager.get_user_info(api_key)
-    
-    # Verify run ownership
-    run = await registry.get_run(run_id)
-    if not run or run.get("user_id") != user_info["id"]:
-        raise HTTPException(status_code=404, detail="Run not found")
-    
-    try:
-        # Get training session
-        session = await registry.get_session(run_id)
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail="Training session not found or not initialized"
-            )
-        
-        # Load reference model if specified
-        reference_model = None
-        if eval_request.reference_model:
-            from modal_runtime.reference_model_cache import get_global_reference_cache
-            cache = get_global_reference_cache()
-            reference_model = cache.get_or_load(eval_request.reference_model)
-        
-        # Run policy evaluation
-        # Note: This would need to be called on the Modal container
-        # For now, return a placeholder response
-        # TODO: Implement Modal method for policy evaluation
-        
-        raise HTTPException(
-            status_code=501,
-            detail="Policy evaluation not yet fully implemented. Coming soon!"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Policy evaluation failed: {str(e)}"
-        )
+# NOTE: Policy evaluation endpoint removed as part of simplification
+# (policy_evaluation.py deleted - use TRL for RL evaluation instead)
+#
+# @app.post("/runs/{run_id}/evaluate")
+#
+# For policy evaluation, use TRL's evaluation utilities directly
 
 
 if __name__ == "__main__":

@@ -1,217 +1,133 @@
-"""Futures implementation for Signal API with double-await pattern.
+"""Minimal wrapper around Modal's built-in futures.
 
-This module implements Tinker-style futures that enable request pipelining:
-- First await: Submits request and returns future (ordering guaranteed)
-- Second await: Waits for computation to complete and returns result
-
-This allows overlapping request submission with execution for better throughput.
+This module provides a thin compatibility layer over Modal's native future support,
+allowing for consistent API across sync and async clients.
 """
-
-import asyncio
-import time
-from typing import Any, Dict, Optional, TYPE_CHECKING
-from dataclasses import dataclass
-
-if TYPE_CHECKING:
-    from .async_training_client_v2 import AsyncTrainingClientV2
-
-
-@dataclass
-class RequestStatus:
-    """Status of a request in the processing pipeline."""
-    request_id: str
-    status: str  # "queued", "running", "completed", "failed"
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    submitted_at: float = 0.0
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
+from typing import Any, Dict, Optional
 
 
 class SignalFuture:
-    """Future representing a pending training operation.
+    """Minimal wrapper around Modal future for consistent API.
     
-    Implements the double-await pattern:
+    This class wraps Modal's native futures to provide a consistent interface
+    for both sync and async operations while leveraging Modal's built-in
+    queueing and execution management.
     
-    Example:
-        # First await: submit request (non-blocking)
-        future = await client.forward_backward_async(batch, "ppo")
-        
-        # Can submit more requests here while first executes
-        future2 = await client.forward_backward_async(batch2, "ppo")
-        
-        # Second await: wait for completion (blocking)
-        result1 = await future
-        result2 = await future2
+    Examples:
+        >>> # With Modal
+        >>> session = get_training_session(run_id)
+        >>> modal_future = session.forward_backward.spawn(batch_data=batch, loss_fn="causal_lm")
+        >>> future = SignalFuture(modal_future)
+        >>> result = await future  # Async await
+        >>> # or
+        >>> result = future.result()  # Sync blocking
     """
     
-    def __init__(
-        self,
-        request_id: str,
-        client: "AsyncTrainingClientV2",
-        poll_interval: float = 0.1,
-        timeout: Optional[float] = None,
-    ):
-        """Initialize future.
+    def __init__(self, modal_future: Any):
+        """Wrap a Modal future.
         
         Args:
-            request_id: Unique identifier for this request
-            client: Client instance to poll for status
-            poll_interval: Seconds between status polls (default: 0.1)
-            timeout: Maximum seconds to wait (default: None = no timeout)
+            modal_future: modal.Future from .spawn() call
         """
-        self.request_id = request_id
-        self._client = client
-        self._poll_interval = poll_interval
-        self._timeout = timeout
-        
+        self._modal_future = modal_future
         self._result: Optional[Dict[str, Any]] = None
-        self._error: Optional[str] = None
         self._completed = False
-        self._cancelled = False
-        self._start_time = time.time()
     
     def __await__(self):
-        """Await the future to get the result.
+        """Await the future (async context).
         
-        This implements the second await in the double-await pattern.
-        Polls the server until the request completes.
+        Returns:
+            Awaitable that resolves to the result
         """
-        return self._wait_for_completion().__await__()
+        return self._get_result().__await__()
     
-    async def _wait_for_completion(self) -> Dict[str, Any]:
-        """Poll for completion and return result."""
-        if self._completed:
-            if self._error:
-                raise RuntimeError(f"Request {self.request_id} failed: {self._error}")
-            return self._result
+    async def _get_result(self):
+        """Internal async method to get result."""
+        if not self._completed:
+            # Modal's .get() is the blocking call
+            self._result = self._modal_future.get()
+            self._completed = True
+        return self._result
+    
+    def result(self, timeout: Optional[float] = None) -> Dict[str, Any]:
+        """Get result synchronously (blocking).
         
-        if self._cancelled:
-            raise asyncio.CancelledError(f"Request {self.request_id} was cancelled")
-        
-        # Poll for completion
-        while not self._completed and not self._cancelled:
-            # Check timeout
-            if self._timeout and (time.time() - self._start_time) > self._timeout:
-                self.cancel()
-                raise asyncio.TimeoutError(
-                    f"Request {self.request_id} timed out after {self._timeout}s"
-                )
+        Args:
+            timeout: Maximum seconds to wait (None = wait forever)
             
-            try:
-                # Check status from server
-                status = await self._client._check_future_status(self.request_id)
-                
-                if status["status"] == "completed":
-                    self._result = status["result"]
-                    self._completed = True
-                    return self._result
-                
-                elif status["status"] == "failed":
-                    self._error = status.get("error", "Unknown error")
-                    self._completed = True
-                    raise RuntimeError(f"Request {self.request_id} failed: {self._error}")
-                
-                elif status["status"] in ["queued", "running"]:
-                    # Still processing, wait and poll again
-                    await asyncio.sleep(self._poll_interval)
-                
-                else:
-                    raise ValueError(f"Unknown status: {status['status']}")
-                    
-            except asyncio.CancelledError:
-                self._cancelled = True
-                raise
-            except Exception as e:
-                self._error = str(e)
-                self._completed = True
-                raise
-        
-        # If we get here, request was cancelled
-        if self._cancelled:
-            raise asyncio.CancelledError(f"Request {self.request_id} was cancelled")
-        
+        Returns:
+            Result dictionary from the operation
+            
+        Raises:
+            TimeoutError: If timeout exceeded
+        """
+        if not self._completed:
+            self._result = self._modal_future.get(timeout=timeout)
+            self._completed = True
         return self._result
     
     def cancel(self) -> bool:
-        """Cancel the request if still in progress.
+        """Cancel the future if possible.
         
         Returns:
-            True if request was cancelled, False if already completed
+            True if successfully cancelled, False otherwise
         """
         if self._completed:
             return False
         
-        self._cancelled = True
-        # TODO: Send cancellation request to server
-        return True
+        try:
+            self._modal_future.cancel()
+            return True
+        except:
+            return False
     
     def done(self) -> bool:
-        """Check if the future is done (completed or failed)."""
-        return self._completed
-    
-    def cancelled(self) -> bool:
-        """Check if the future was cancelled."""
-        return self._cancelled
-    
-    def result(self, timeout: Optional[float] = None) -> Dict[str, Any]:
-        """Get the result synchronously (blocks).
+        """Check if the future is completed.
         
-        Args:
-            timeout: Maximum seconds to wait
-            
         Returns:
-            Result dictionary
-            
-        Raises:
-            TimeoutError: If timeout exceeded
-            RuntimeError: If request failed
-            CancelledError: If request was cancelled
+            True if completed, False otherwise
         """
         if self._completed:
-            if self._error:
-                raise RuntimeError(f"Request {self.request_id} failed: {self._error}")
-            return self._result
+            return True
         
-        if self._cancelled:
-            raise asyncio.CancelledError(f"Request {self.request_id} was cancelled")
-        
-        # Run async wait in sync context
-        loop = asyncio.get_event_loop()
-        if timeout:
-            return loop.run_until_complete(
-                asyncio.wait_for(self._wait_for_completion(), timeout=timeout)
-            )
-        else:
-            return loop.run_until_complete(self._wait_for_completion())
+        # Try to check if Modal future is done
+        # Modal doesn't expose a done() method, so we try a very short timeout
+        try:
+            self._result = self._modal_future.get(timeout=0.001)
+            self._completed = True
+            return True
+        except:
+            return False
     
     def __repr__(self) -> str:
-        status = "cancelled" if self._cancelled else "completed" if self._completed else "pending"
-        return f"<SignalFuture(request_id={self.request_id}, status={status})>"
+        """String representation."""
+        status = "completed" if self._completed else "pending"
+        return f"<SignalFuture(status={status})>"
 
 
 class FutureGroup:
     """Manage multiple futures as a group.
     
-    Useful for batch operations and pipelining.
+    Useful for batch operations and waiting on multiple futures.
     
-    Example:
-        group = FutureGroup()
-        
-        # Submit multiple requests
-        for batch in dataloader:
-            future = await client.forward_backward_async(batch, "ppo")
-            group.add(future)
-        
-        # Wait for all to complete
-        results = await group.wait_all()
+    Examples:
+        >>> group = FutureGroup()
+        >>> for batch in batches:
+        >>>     future = await client.forward_backward_async(batch, "causal_lm")
+        >>>     group.add(future)
+        >>> results = await group.wait_all()
     """
     
     def __init__(self):
+        """Initialize empty future group."""
         self.futures: list[SignalFuture] = []
     
     def add(self, future: SignalFuture) -> None:
-        """Add a future to the group."""
+        """Add a future to the group.
+        
+        Args:
+            future: SignalFuture to add
+        """
         self.futures.append(future)
     
     async def wait_all(self, return_exceptions: bool = False) -> list[Dict[str, Any]]:
@@ -223,37 +139,19 @@ class FutureGroup:
         Returns:
             List of results (or exceptions if return_exceptions=True)
         """
+        import asyncio
+        
         if return_exceptions:
             results = await asyncio.gather(
-                *[future._wait_for_completion() for future in self.futures],
+                *[future._get_result() for future in self.futures],
                 return_exceptions=True
             )
         else:
             results = await asyncio.gather(
-                *[future._wait_for_completion() for future in self.futures]
+                *[future._get_result() for future in self.futures]
             )
         
         return results
-    
-    async def wait_any(self) -> Dict[str, Any]:
-        """Wait for the first future to complete.
-        
-        Returns:
-            Result from the first completed future
-        """
-        done, pending = await asyncio.wait(
-            [future._wait_for_completion() for future in self.futures],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
-        # Get result from first completed
-        result = await next(iter(done))
-        
-        # Cancel pending futures
-        for task in pending:
-            task.cancel()
-        
-        return result
     
     def cancel_all(self) -> None:
         """Cancel all futures in the group."""
@@ -261,39 +159,9 @@ class FutureGroup:
             future.cancel()
     
     def __len__(self) -> int:
+        """Get number of futures in group."""
         return len(self.futures)
     
     def __iter__(self):
+        """Iterate over futures."""
         return iter(self.futures)
-
-
-def create_pipelined_batch_processor(
-    max_concurrent: int = 3,
-) -> callable:
-    """Create a semaphore-based batch processor for pipelining.
-    
-    This limits the number of concurrent in-flight requests to prevent
-    overwhelming the server while still allowing pipelining.
-    
-    Args:
-        max_concurrent: Maximum concurrent requests
-        
-    Returns:
-        Async context manager function
-        
-    Example:
-        processor = create_pipelined_batch_processor(max_concurrent=3)
-        
-        for batch in dataloader:
-            async with processor():
-                future = await client.forward_backward_async(batch, "ppo")
-                results.append(await future)
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def processor():
-        async with semaphore:
-            yield
-    
-    return processor
-

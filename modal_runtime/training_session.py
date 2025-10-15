@@ -407,30 +407,53 @@ class TrainingSession:
             # Set model to training mode
             self.model.train()
             
-            # Compute forward-backward (model already in GPU - fast!)
+            # Move batch to device
+            device = next(self.model.parameters()).device
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
+                     for k, v in batch.items()}
+            
             if loss_kwargs is None:
                 loss_kwargs = {}
             
-            loss, grad_stats = compute_forward_backward(
-                model=self.model,
-                batch=batch,
-                accumulate=(self.accumulation_count > 0),
-                loss_fn=loss_fn,
-                loss_kwargs=loss_kwargs,
+            # FORWARD PASS (explicit and clean)
+            outputs = self.model(
+                input_ids=batch["input_ids"],
+                attention_mask=batch.get("attention_mask"),
+                labels=batch.get("labels", batch["input_ids"]),
             )
+            
+            # COMPUTE LOSS (separate step)
+            from modal_runtime.loss_functions import compute_loss_from_outputs
+            loss, loss_metrics = compute_loss_from_outputs(
+                outputs, 
+                batch.get("labels"), 
+                loss_fn, 
+                **loss_kwargs
+            )
+            
+            # BACKWARD PASS
+            loss.backward()
+            
+            # Compute gradient statistics
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), float('inf'))
+            
+            grad_stats = {
+                "grad_norm": grad_norm.item(),
+                **loss_metrics,
+            }
             
             # Track gradient accumulation
             self.accumulation_count += 1
             
             print(f"\n{'=' * 80}")
             print(f"✓ FORWARD-BACKWARD COMPLETE")
-            print(f"Loss: {loss:.4f} | Grad Norm: {grad_stats.get('grad_norm', 0):.4f}")
+            print(f"Loss: {loss.item():.4f} | Grad Norm: {grad_stats.get('grad_norm', 0):.4f}")
             print(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
             print(f"{'=' * 80}")
             
             return {
                 "status": "success",
-                "loss": loss,
+                "loss": loss.item(),
                 "step": self.current_step,
                 "accumulation_count": self.accumulation_count,
                 "grad_norm": grad_stats.get("grad_norm", 0.0),
