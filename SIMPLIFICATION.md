@@ -15,12 +15,14 @@ This document summarizes the major simplification refactoring of the Signal code
 **Problem:** Loss functions were calling `model()` internally, breaking separation of concerns and making the code confusing.
 
 **Solution:**
+
 - Refactored `modal_runtime/loss_functions.py` from 757 lines → ~150 lines
 - Created `compute_loss_from_outputs()` that works on model outputs instead of calling model
 - Forward pass now happens explicitly in training session methods
 - Removed custom RL losses - use TRL (HuggingFace Transformers Reinforcement Learning) library instead
 
 **Benefits:**
+
 - Clean separation: forward pass → loss computation → backward pass
 - Uses HuggingFace's built-in loss computation
 - RL algorithms delegated to TRL (industry standard)
@@ -30,15 +32,18 @@ This document summarizes the major simplification refactoring of the Signal code
 **Problem:** 9 nearly identical GPU class definitions (933 lines of duplication)
 
 **Solution:**
+
 - Ready to replace with 2 classes: `TrainingSessionSingle` and `TrainingSessionMulti`
 - Uses dynamic GPU allocation with Modal params
 - All shared logic in `TrainingSessionBase`
 
 **Files Affected:**
+
 - `modal_runtime/multi_gpu_session.py` - Updated with simplified forward_backward
 - Ready for consolidation into simpler structure
 
 **Benefits:**
+
 - ~700 lines of duplicate code can be removed
 - Easier to maintain
 - Clearer structure
@@ -48,11 +53,13 @@ This document summarizes the major simplification refactoring of the Signal code
 **Problem:** Custom futures implementation with complex queueing (900+ lines across multiple files)
 
 **Solution:**
+
 - Simplified `client/rewardsignal/futures.py` from 300 lines → 50 lines
 - Minimal wrapper around Modal's built-in `.spawn()` futures
 - Removed custom request queue and orchestrator
 
 **Files Deleted:**
+
 - `client/rewardsignal/request_queue.py` (202 lines)
 - `api/request_orchestrator.py` (387 lines)
 - `client/rewardsignal/async_training_client.py` (348 lines)
@@ -60,6 +67,7 @@ This document summarizes the major simplification refactoring of the Signal code
 - `client/rewardsignal/async_inference_client.py` (~300 lines)
 
 **Benefits:**
+
 - Leverages Modal's native queueing and futures
 - Much simpler and easier to understand
 - Less code to maintain
@@ -67,18 +75,22 @@ This document summarizes the major simplification refactoring of the Signal code
 ### 4. Removed Unnecessary Features ✅
 
 **Files Deleted:**
+
 - `modal_runtime/policy_evaluation.py` (~300 lines) - Use TRL instead
 - `api/datadog_client.py` (~150 lines) - Optional monitoring
 - `modal_runtime/reference_model_cache.py` (~200 lines) - Overcomplicated
 
 **Files Simplified:**
+
 - `modal_runtime/gpu_monitor.py` (~200 lines → ~50 lines) - Basic torch.cuda calls only
 
 **Files Kept:**
+
 - `modal_runtime/s3_client.py` - Needed for checkpoint storage
 - `modal_runtime/gpu_monitor.py` - Simplified version for basic monitoring
 
 **Benefits:**
+
 - Removed ~800 lines of optional/unused code
 - Focused on core functionality
 - Clearer codebase
@@ -88,6 +100,7 @@ This document summarizes the major simplification refactoring of the Signal code
 **Problem:** Too many overlapping client files (7 different client types)
 
 **Solution:**
+
 - Updated `__init__.py` to export only essential clients:
   - `SignalClient` - Main sync client
   - `AsyncSignalClient` - Main async client
@@ -97,9 +110,11 @@ This document summarizes the major simplification refactoring of the Signal code
   - `FutureGroup` - Batch future management
 
 **Files Deleted:**
+
 - Old async client variations (merged into `async_client.py`)
 
 **Benefits:**
+
 - Clear, focused API
 - Less confusion about which client to use
 - Easier to document and maintain
@@ -229,4 +244,3 @@ After this simplification, verify:
 ## Conclusion
 
 This simplification makes Signal easier to understand, maintain, and extend while preserving all core functionality. The codebase now follows clearer patterns, uses industry-standard libraries (TRL), and leverages Modal's built-in features instead of reimplementing them.
-
