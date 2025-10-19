@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Optional Modal import - only available when Modal is properly configured
 try:
-    from modal_runtime.primitives import sample as modal_sample
+    from modal_runtime import sample as modal_sample
     MODAL_AVAILABLE = True
 except ImportError:
     MODAL_AVAILABLE = False
@@ -123,11 +123,7 @@ async def chat_completions(
     user_id: str = Depends(verify_auth),
 ) -> Dict[str, Any]:
     """
-    OpenAI-compatible chat completions endpoint.
-    
-    This allows Verifiers environments to use Signal models
-    for RL training and evaluation.
-    """
+    OpenAI-compatible chat completions endpoint."""
     try:
         # Extract run ID from model field
         run_id = extract_run_id_from_model(request.model)
@@ -189,7 +185,7 @@ async def chat_completions(
             ))
         
         # Estimate token counts (rough word-based approximation)
-        # Note: This is an estimate. Use tiktoken for accurate token counting.
+        # TODO: This is an estimate. Use tiktoken for accurate token counting.
         # We use 1.3x word count as a heuristic (1 token ≈ 0.75 words)
         prompt_tokens = len(prompt.split()) * 1.3
         completion_tokens = sum(len(c.message.content.split()) * 1.3 for c in choices)
@@ -221,11 +217,7 @@ async def completions(
     user_id: str = Depends(verify_auth),
 ) -> Dict[str, Any]:
     """
-    OpenAI-compatible completions endpoint.
-    
-    This allows Verifiers environments to use Signal models
-    for RL training and evaluation.
-    """
+    OpenAI-compatible completions endpoint."""
     try:
         # Extract run ID from model field
         run_id = extract_run_id_from_model(request.model)
@@ -277,7 +269,7 @@ async def completions(
             ))
         
         # Estimate token counts (rough word-based approximation)
-        # Note: This is an estimate. Use tiktoken for accurate token counting.
+        # TODO: This is an estimate. Use tiktoken for accurate token counting.
         prompt_tokens = sum(len(p.split()) * 1.3 for p in all_prompts)
         completion_tokens = sum(len(c.text.split()) * 1.3 for c in choices)
         

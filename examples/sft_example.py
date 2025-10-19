@@ -5,7 +5,7 @@ This example demonstrates how to fine-tune a language model using
 the Signal API with the four training primitives.
 """
 
-from client.python_client import SignalClient
+from client.rewardsignal import SignalClient
 
 
 def main():

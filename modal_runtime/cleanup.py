@@ -10,14 +10,7 @@ from modal_runtime.app import app, data_volume, VOLUME_CONFIG, api_secret
 
 
 def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any]]:
-    """Scan Modal Volume for all run directories.
-    
-    Args:
-        base_path: Base path for runs on Modal Volume
-        
-    Returns:
-        List of dicts with run info (user_id, run_id, path, last_modified)
-    """
+    """Scan Modal Volume for all run directories."""
     base_dir = Path(base_path)
     
     if not base_dir.exists():
@@ -56,16 +49,9 @@ def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any
     
     return runs
 
-
+# TODO: for logging purposes, maybe don't delete? idk check this one as well
 def delete_run_directory(run_path: str) -> int:
-    """Delete a run directory and return bytes freed.
-    
-    Args:
-        run_path: Path to run directory
-        
-    Returns:
-        Number of bytes freed
-    """
+    """Delete a run directory and return bytes freed."""
     run_dir = Path(run_path)
     
     if not run_dir.exists():
@@ -79,7 +65,7 @@ def delete_run_directory(run_path: str) -> int:
     
     return total_size
 
-
+# TODO: decide if retention days should vary, for now lets say no.
 @app.function(
     image=modal.Image.debian_slim().pip_install("requests"),
     volumes=VOLUME_CONFIG,
@@ -95,13 +81,7 @@ def cleanup_old_runs(
     """Scheduled cleanup job to remove old runs from Modal Volume.
     
     Runs daily to clean up completed training runs older than retention_days.
-    Artifacts remain in S3 for long-term storage.
-    
-    Args:
-        retention_days: Number of days to retain runs on Modal Volume (default: 7)
-        dry_run: If True, only log what would be deleted without actually deleting
-        api_url: Optional API URL to update database (from env if not provided)
-    """
+    Artifacts remain in S3 for long-term storage."""
     print("=" * 80)
     print(f"Starting Modal Volume cleanup job")
     print(f"Retention policy: {retention_days} days")
@@ -252,12 +232,7 @@ def cleanup_stale_runs(
     """Mark runs without recent activity as failed.
     
     Prevents stuck runs when clients crash or lose connection.
-    Uses the database's updated_at column which auto-updates on any API activity.
-    
-    Args:
-        stale_minutes: Minutes without activity before marking as failed (default: 30)
-        dry_run: If True, only log what would be marked as failed
-    """
+    Uses the database's updated_at column which auto-updates on any API activity."""
     import requests
     from supabase import create_client
     

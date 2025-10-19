@@ -238,7 +238,7 @@ class AsyncSignalClient:
     def __init__(
         self, 
         api_key: str, 
-        base_url: str = "https://api.frontier-signal.com",
+        base_url: str = "https://api.frontier-signal.com", # TODO: is this the correct base url?
         timeout: int = 300,
     ):
         """Initialize the async client.
@@ -299,6 +299,8 @@ class AsyncSignalClient:
         Raises:
             SignalAPIError: Appropriate exception based on status code
         """
+        # Parse error data once, default to None if parsing fails
+        error_data = None
         try:
             error_data = response.json()
             error_msg = error_data.get("detail") or error_data.get("error", response.text)
@@ -308,19 +310,19 @@ class AsyncSignalClient:
         status_code = response.status_code
         
         if status_code == 401:
-            raise AuthenticationError(error_msg, response_data=error_data if 'error_data' in locals() else None)
+            raise AuthenticationError(error_msg, response_data=error_data)
         elif status_code == 403:
-            raise AuthorizationError(error_msg, response_data=error_data if 'error_data' in locals() else None)
+            raise AuthorizationError(error_msg, response_data=error_data)
         elif status_code == 404:
-            raise NotFoundError(error_msg, response_data=error_data if 'error_data' in locals() else None)
+            raise NotFoundError(error_msg, response_data=error_data)
         elif status_code == 422:
-            raise ValidationError(error_msg, response_data=error_data if 'error_data' in locals() else None)
+            raise ValidationError(error_msg, response_data=error_data)
         elif status_code == 429:
-            raise RateLimitError(error_msg, response_data=error_data if 'error_data' in locals() else None)
+            raise RateLimitError(error_msg, response_data=error_data)
         elif status_code >= 500:
-            raise ServerError(error_msg, status_code=status_code, response_data=error_data if 'error_data' in locals() else None)
+            raise ServerError(error_msg, status_code=status_code, response_data=error_data)
         else:
-            raise SignalAPIError(error_msg, status_code=status_code, response_data=error_data if 'error_data' in locals() else None)
+            raise SignalAPIError(error_msg, status_code=status_code, response_data=error_data)
     
     async def _request(
         self,

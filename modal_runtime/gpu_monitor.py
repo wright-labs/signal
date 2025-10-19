@@ -4,11 +4,7 @@ from typing import Dict, List, Any
 
 
 def get_gpu_stats() -> List[Dict[str, Any]]:
-    """Get basic GPU memory stats.
-    
-    Returns:
-        List of GPU stat dictionaries with memory info
-    """
+    """Get basic GPU memory stats."""
     if not torch.cuda.is_available():
         return []
     
@@ -29,11 +25,7 @@ def get_gpu_stats() -> List[Dict[str, Any]]:
 
 
 def get_gpu_summary() -> Dict[str, Any]:
-    """Get GPU summary across all GPUs.
-    
-    Returns:
-        Dictionary with aggregated GPU stats
-    """
+    """Get GPU summary across all GPUs."""
     stats = get_gpu_stats()
     if not stats:
         return {"num_gpus": 0}
@@ -65,17 +57,9 @@ def print_gpu_stats():
     
     print(f"{'=' * 60}\n")
 
-
+# TODO: check this, not sure if this is the correct way to do it
 def setup_multi_gpu_model(model: Any, strategy: str = "data_parallel") -> Any:
-    """Wrap model for multi-GPU using DataParallel.
-    
-    Args:
-        model: PyTorch model to wrap
-        strategy: Multi-GPU strategy (only "data_parallel" supported)
-        
-    Returns:
-        Wrapped model (or original if single GPU)
-    """
+    """Wrap model for multi-GPU using DataParallel."""
     if not torch.cuda.is_available():
         return model
     

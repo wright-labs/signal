@@ -14,21 +14,7 @@ def compute_loss_from_outputs(
     loss_fn: str = "causal_lm",
     **kwargs
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
-    """Compute loss from model outputs using HuggingFace's built-in losses.
-    
-    Args:
-        outputs: Model outputs (from model(**inputs))
-        labels: Ground truth labels (optional, may already be in outputs)
-        loss_fn: Loss function type (causal_lm, dpo, ppo)
-        **kwargs: Additional loss function arguments
-        
-    Returns:
-        Tuple of (loss_tensor, metrics_dict)
-        
-    Examples:
-        >>> outputs = model(input_ids=batch["input_ids"], labels=batch["labels"])
-        >>> loss, metrics = compute_loss_from_outputs(outputs, loss_fn="causal_lm")
-    """
+    """Compute loss from model outputs using HuggingFace's built-in losses."""
     if loss_fn == "causal_lm":
         # HuggingFace already computed loss if labels were provided
         if not hasattr(outputs, 'loss') or outputs.loss is None:

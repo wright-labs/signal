@@ -5,6 +5,7 @@ allowing for consistent API across sync and async clients.
 """
 from typing import Any, Dict, Optional
 
+# TODO: why do we have a future and an async client?
 
 class SignalFuture:
     """Minimal wrapper around Modal future for consistent API.

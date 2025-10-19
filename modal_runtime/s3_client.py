@@ -7,6 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# TODO: please tell me there is a cheaper egress option than s3
 
 def get_s3_client():
     """Initialize boto3 S3 client with credentials from environment."""

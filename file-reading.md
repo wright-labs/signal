@@ -1,10 +1,10 @@
-## **Complete Reading Order for Signal Codebase**
+# **Complete Reading Order for Signal Codebase**
 
 This is a structured reading order designed to build your understanding progressively, from high-level concepts down to implementation details.
 
 ---
 
-### **Phase 1: High-Level Overview (Start Here)**
+## **Phase 1: High-Level Overview -- DONE**
 
 *Understand what the project does and its architecture*
 
@@ -20,7 +20,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 2: Configuration**
+## **Phase 2: Configuration -- DONE**
+
 *Understand what models are supported and how they're configured*
 
 6. **`config/models.yaml`** - List of supported models with GPU configurations. Critical for understanding model-to-GPU mapping.
@@ -31,7 +32,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 3: Core API Layer**
+## **Phase 3: Core API Layer -- DONE**
+
 *The FastAPI server that orchestrates everything*
 
 9. **`main.py`** - Main entry point (imports from api module).
@@ -58,7 +60,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 4: Modal Runtime - GPU Training Infrastructure**
+## **Phase 4: Modal Runtime - GPU Training Infrastructure**
+
 *The actual training code that runs on Modal's GPUs*
 
 20. **`modal_runtime/__init__.py`** - Module initialization.
@@ -89,7 +92,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 5: Client SDK**
+## **Phase 5: Client SDK**
+
 *Python SDK for interacting with the API*
 
 33. **`client/frontier_signal/__init__.py`** - SDK module exports. Shows all public API.
@@ -122,7 +126,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 6: Examples**
+## **Phase 6: Examples**
+
 *Learn by example*
 
 47. **`examples/sft_example.py`** - **START HERE FOR EXAMPLES**: Complete supervised fine-tuning example showing the full training loop with all four primitives.
@@ -137,7 +142,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 7: Testing**
+## **Phase 7: Testing**
+
 *Understand how components are tested*
 
 52. **`tests/conftest.py`** - Pytest configuration and fixtures.
@@ -176,7 +182,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 8: Scripts & Utilities**
+## **Phase 8: Scripts & Utilities**
+
 *Tools for managing the system*
 
 69. **`scripts/__init__.py`** - Scripts module initialization.
@@ -201,7 +208,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 9: Deployment & Infrastructure**
+## **Phase 9: Deployment & Infrastructure**
+
 *Configuration for hosting*
 
 79. **`Procfile`** - Process file for Heroku/Railway deployment.
@@ -218,7 +226,8 @@ This is a structured reading order designed to build your understanding progress
 
 ---
 
-### **Phase 10: Housekeeping Files**
+## **Phase 10: Housekeeping Files**
+
 *Supporting files*
 
 85. **`LICENSE`** - MIT license.

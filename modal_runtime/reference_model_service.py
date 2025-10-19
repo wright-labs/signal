@@ -14,6 +14,7 @@ from modal_runtime.app import (
     huggingface_secret,
 )
 
+# TODO: why do we need a reference model again?
 
 @app.cls(
     image=TRAINING_IMAGE,

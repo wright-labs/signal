@@ -28,23 +28,7 @@ def load_model_and_tokenizer(
     This function loads a causal language model for LoRA fine-tuning.
     
     By default uses full precision LoRA (bf16/fp16). Set load_in_4bit=True or
-    load_in_8bit=True for QLoRA (quantized LoRA) to save memory.
-    
-    Args:
-        model_name: HuggingFace model ID (e.g., 'Qwen/Qwen2.5-3B')
-        load_in_8bit: Use 8-bit quantization for QLoRA (reduces memory)
-        load_in_4bit: Use 4-bit quantization for QLoRA (reduces memory more)
-        max_seq_length: Maximum sequence length
-        bf16: Use bfloat16 precision (recommended for modern GPUs)
-        gradient_checkpointing: Enable gradient checkpointing (trades compute for memory)
-        
-    Returns:
-        Tuple of (model, tokenizer)
-        
-    Note:
-        - Default: Full precision LoRA (better quality, more memory)
-        - QLoRA: Set load_in_4bit=True (good quality, less memory)
-    """
+    load_in_8bit=True for QLoRA (quantized LoRA) to save memory."""
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -123,18 +107,7 @@ def apply_lora_to_model(
     lora_dropout: float = 0.0,
     lora_target_modules: Optional[List[str]] = None,
 ) -> Any:
-    """Apply LoRA adapters to a model.
-    
-    Args:
-        model: Base model
-        lora_r: LoRA rank (dimension of low-rank matrices)
-        lora_alpha: LoRA scaling factor (alpha/r is the effective learning rate multiplier)
-        lora_dropout: LoRA dropout rate
-        lora_target_modules: Target modules for LoRA (if None, uses common defaults)
-        
-    Returns:
-        Model with LoRA adapters
-    """
+    """Apply LoRA adapters to a model."""
     from peft import LoraConfig, get_peft_model, TaskType
     
     # Default target modules if not specified
@@ -185,15 +158,7 @@ def load_lora_checkpoint(
     model: Any,
     checkpoint_path: str,
 ) -> Any:
-    """Load LoRA checkpoint into model.
-    
-    Args:
-        model: Model with LoRA adapters
-        checkpoint_path: Path to LoRA checkpoint directory
-        
-    Returns:
-        Model with loaded checkpoint
-    """
+    """Load LoRA checkpoint into model."""
     from peft import PeftModel
     
     checkpoint_path = Path(checkpoint_path)

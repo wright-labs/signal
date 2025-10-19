@@ -5,6 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# TODO: this is duplicated in cost_tracker.py in the backend, need to fix.
 # Modal GPU pricing (per hour, as of Oct 2024)
 GPU_HOURLY_RATES = {
     "b200": 6.25,

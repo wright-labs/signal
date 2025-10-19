@@ -10,30 +10,7 @@ from contextlib import contextmanager
 
 
 class MetricsCollector:
-    """Collects training metrics and sends to monitoring systems.
-    
-    This class:
-    - Collects metrics from training loops
-    - Sends metrics to Datadog (if enabled)
-    - Provides timing context managers
-    - Aggregates metrics over time
-    
-    Example:
-        collector = MetricsCollector(run_id="run_123")
-        
-        # Collect training metrics
-        collector.collect_training_metrics(
-            loss=0.5,
-            grad_norm=2.3,
-            learning_rate=1e-4,
-            step=100,
-        )
-        
-        # Time an operation
-        with collector.time_operation("forward_backward"):
-            # ... do forward backward ...
-            pass
-    """
+    """Collects training metrics and sends to monitoring systems."""
     
     def __init__(
         self,
@@ -41,13 +18,7 @@ class MetricsCollector:
         user_id: Optional[str] = None,
         enable_datadog: bool = True,
     ):
-        """Initialize metrics collector.
-        
-        Args:
-            run_id: Run identifier
-            user_id: User identifier (optional)
-            enable_datadog: Whether to send metrics to Datadog
-        """
+        """Initialize metrics collector."""
         self.run_id = run_id
         self.user_id = user_id
         self.enable_datadog = enable_datadog
@@ -81,14 +52,7 @@ class MetricsCollector:
         return self._datadog_client
     
     def _get_tags(self, extra_tags: Optional[List[str]] = None) -> List[str]:
-        """Get tags for metrics.
-        
-        Args:
-            extra_tags: Additional tags
-            
-        Returns:
-            List of tags
-        """
+        """Get tags for metrics."""
         tags = [f"run_id:{self.run_id}"]
         
         if self.user_id:
@@ -108,16 +72,7 @@ class MetricsCollector:
         extra_metrics: Optional[Dict[str, float]] = None,
         tags: Optional[List[str]] = None,
     ) -> None:
-        """Collect basic training metrics.
-        
-        Args:
-            loss: Training loss
-            grad_norm: Gradient norm
-            learning_rate: Learning rate
-            step: Training step
-            extra_metrics: Additional metrics
-            tags: Additional tags
-        """
+        """Collect basic training metrics."""
         # Send to Datadog
         if self.datadog:
             metric_tags = self._get_tags(tags)
@@ -160,22 +115,7 @@ class MetricsCollector:
         extra_metrics: Optional[Dict[str, float]] = None,
         tags: Optional[List[str]] = None,
     ) -> None:
-        """Collect RL-specific metrics.
-        
-        Args:
-            step: Training step
-            policy_loss: Policy loss
-            value_loss: Value function loss
-            entropy: Policy entropy
-            kl_divergence: KL divergence from reference
-            clip_fraction: Fraction of clipped ratios
-            advantage_mean: Mean advantage
-            advantage_std: Advantage std deviation
-            explained_variance: Value function explained variance
-            reward_mean: Mean reward
-            extra_metrics: Additional metrics
-            tags: Additional tags
-        """
+        """Collect RL-specific metrics. """
         if self.datadog:
             metric_tags = self._get_tags(tags)
             
@@ -212,16 +152,7 @@ class MetricsCollector:
         gpu_memory_used_gb: Optional[float] = None,
         tags: Optional[List[str]] = None,
     ) -> None:
-        """Collect performance metrics.
-        
-        Args:
-            forward_backward_duration_ms: Forward-backward duration in ms
-            optim_step_duration_ms: Optimizer step duration in ms
-            queue_depth: Number of queued requests
-            gpu_utilization: GPU utilization percentage
-            gpu_memory_used_gb: GPU memory used in GB
-            tags: Additional tags
-        """
+        """Collect performance metrics."""
         if self.datadog:
             metric_tags = self._get_tags(tags)
             
@@ -246,20 +177,7 @@ class MetricsCollector:
     
     @contextmanager
     def time_operation(self, operation_name: str, tags: Optional[List[str]] = None):
-        """Context manager to time an operation.
-        
-        Args:
-            operation_name: Name of the operation
-            tags: Additional tags
-            
-        Yields:
-            None
-            
-        Example:
-            with collector.time_operation("forward_backward"):
-                # ... do forward backward ...
-                pass
-        """
+        """Context manager to time an operation."""
         start_time = time.time()
         
         try:
@@ -282,24 +200,13 @@ class MetricsCollector:
         alert_type: str = "info",
         tags: Optional[List[str]] = None,
     ) -> None:
-        """Send an event to Datadog.
-        
-        Args:
-            title: Event title
-            text: Event description
-            alert_type: Alert type ("info", "warning", "error", "success")
-            tags: Additional tags
-        """
+        """Send an event to Datadog."""
         if self.datadog:
             metric_tags = self._get_tags(tags)
             self.datadog.event(title, text, alert_type=alert_type, tags=metric_tags)
     
     def get_metrics_summary(self) -> Dict[str, Any]:
-        """Get summary of collected metrics.
-        
-        Returns:
-            Dictionary with metrics summary
-        """
+        """Get summary of collected metrics."""
         if not self.metrics_history:
             return {
                 "num_metrics": 0,
@@ -321,16 +228,7 @@ def create_metrics_collector(
     user_id: Optional[str] = None,
     enable_datadog: bool = True,
 ) -> MetricsCollector:
-    """Create a metrics collector instance.
-    
-    Args:
-        run_id: Run identifier
-        user_id: User identifier (optional)
-        enable_datadog: Whether to send metrics to Datadog
-        
-    Returns:
-        MetricsCollector instance
-    """
+    """Create a metrics collector instance."""
     return MetricsCollector(
         run_id=run_id,
         user_id=user_id,

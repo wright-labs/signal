@@ -86,11 +86,13 @@ TRAINING_IMAGE = (
     )
 )
 
+# TODO: wait check this one
 # Inference image - use same as training for simplicity
 # Previously tried vLLM but it caused OOM during build
 # The training image works fine for inference too
 INFERENCE_IMAGE = TRAINING_IMAGE
 
+# TODO: also validate why this is imported at the end
 # Import training session classes to register stateful container classes
 # This must be at the end after all images and secrets are defined
 # import modal_runtime.training_session  # noqa: F401, E402  # Single class (disabled in favor of multi_gpu_session)

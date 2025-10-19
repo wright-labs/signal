@@ -16,11 +16,7 @@ class RunRegistry:
     MAX_CONCURRENT_RUNS_PER_USER = int(os.getenv("MAX_CONCURRENT_RUNS_PER_USER", "5"))
     
     def __init__(self, supabase_client: Optional[Client] = None):
-        """Initialize the run registry.
-        
-        Args:
-            supabase_client: Optional Supabase client (for testing)
-        """
+        """Initialize the run registry."""
         self.supabase = supabase_client or get_supabase()
     
     def create_run(
@@ -31,19 +27,7 @@ class RunRegistry:
     ) -> str:
         """Create a new training run with race-condition-safe concurrent check.
         
-        Uses atomic database function to check limit and insert in single transaction.
-        
-        Args:
-            user_id: User UUID from Supabase Auth
-            base_model: Base model name (e.g., "meta-llama/Llama-3.1-8B")
-            config: Run configuration dictionary
-            
-        Returns:
-            Generated run_id
-            
-        Raises:
-            Exception: If database operation fails or resource limits exceeded
-        """
+        Uses atomic database function to check limit and insert in single transaction."""
         run_id = f"run_{uuid.uuid4().hex[:16]}"
         
         try:
@@ -77,12 +61,8 @@ class RunRegistry:
     
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get run metadata."""
-        try:
-            result = self.supabase.table("runs").select("*").eq("id", run_id).single().execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Error fetching run {run_id}: {e}")
-            return None
+        result = self.supabase.table("runs").select("*").eq("id", run_id).single().execute()
+        return result.data
     
     def update_run(
         self,
@@ -161,29 +141,21 @@ class RunRegistry:
     
     def get_metrics(self, run_id: str) -> Optional[List[Dict[str, Any]]]:
         """Get all metrics for a run."""
-        try:
-            result = self.supabase.table("run_metrics").select(
-                "*"
-            ).eq("run_id", run_id).order("step", desc=False).execute()
-            
-            return result.data
-        except Exception as e:
-            logger.error(f"Error fetching metrics for run {run_id}: {e}")
-            return None
+        result = self.supabase.table("run_metrics").select(
+            "*"
+        ).eq("run_id", run_id).order("step", desc=False).execute()
+        
+        return result.data
     
     def get_latest_metric(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get the most recent metric for a run."""
-        try:
-            result = self.supabase.table("run_metrics").select(
-                "*"
-            ).eq("run_id", run_id).order("step", desc=True).limit(1).execute()
-            
-            if result.data and len(result.data) > 0:
-                return result.data[0]
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching latest metric for run {run_id}: {e}")
-            return None
+        result = self.supabase.table("run_metrics").select(
+            "*"
+        ).eq("run_id", run_id).order("step", desc=True).limit(1).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        return None
     
     def get_run_summary(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get a summary of run with latest metrics."""
@@ -229,15 +201,11 @@ class RunRegistry:
     
     def get_run_artifacts(self, run_id: str) -> List[Dict[str, Any]]:
         """Get all artifacts for a run."""
-        try:
-            result = self.supabase.table("artifacts").select(
-                "*"
-            ).eq("run_id", run_id).order("step", desc=True).execute()
-            
-            return result.data or []
-        except Exception as e:
-            logger.error(f"Error fetching artifacts for run {run_id}: {e}")
-            return []
+        result = self.supabase.table("artifacts").select(
+            "*"
+        ).eq("run_id", run_id).order("step", desc=True).execute()
+        
+        return result.data or []
     
     def update_artifact_download(
         self,
