@@ -78,20 +78,14 @@ def upload_file(local_path: str, s3_path: str, bucket: Optional[str] = None) -> 
     
     file_size = local_file.stat().st_size
     
-    try:
-        logger.info(f"Uploading {local_path} to s3://{bucket}/{s3_path}")
-        s3_client.upload_file(str(local_file), bucket, s3_path)
-        
-        return {
-            "s3_uri": f"s3://{bucket}/{s3_path}",
-            "file_size": file_size,
-            "status": "success"
-        }
-    except Exception as e:
-        from botocore.exceptions import ClientError
-        if isinstance(e, ClientError):
-            logger.error(f"Failed to upload {local_path}: {e}")
-        raise
+    logger.info(f"Uploading {local_path} to s3://{bucket}/{s3_path}")
+    s3_client.upload_file(str(local_file), bucket, s3_path)
+    
+    return {
+        "s3_uri": f"s3://{bucket}/{s3_path}",
+        "file_size": file_size,
+        "status": "success"
+    }
 
 
 def upload_directory(local_path: str, s3_prefix: str, bucket: Optional[str] = None) -> Dict[str, Any]:
@@ -153,23 +147,19 @@ def upload_manifest(manifest_dict: Dict[str, Any], s3_prefix: str, bucket: Optio
     manifest_key = s3_prefix + "manifest.json"
     manifest_json = json.dumps(manifest_dict, indent=2)
     
-    try:
-        logger.info(f"Uploading manifest to s3://{bucket}/{manifest_key}")
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=manifest_key,
-            Body=manifest_json.encode('utf-8'),
-            ContentType='application/json'
-        )
-        
-        return {
-            "s3_uri": f"s3://{bucket}/{manifest_key}",
-            "size": len(manifest_json),
-            "status": "success"
-        }
-    except ClientError as e:
-        logger.error(f"Failed to upload manifest: {e}")
-        raise
+    logger.info(f"Uploading manifest to s3://{bucket}/{manifest_key}")
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=manifest_key,
+        Body=manifest_json.encode('utf-8'),
+        ContentType='application/json'
+    )
+    
+    return {
+        "s3_uri": f"s3://{bucket}/{manifest_key}",
+        "size": len(manifest_json),
+        "status": "success"
+    }
 
 
 def generate_signed_url(s3_uri: str, expiration: int = 3600) -> str:
@@ -184,16 +174,12 @@ def generate_signed_url(s3_uri: str, expiration: int = 3600) -> str:
     
     s3_client = get_s3_client()
     
-    try:
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': bucket, 'Key': key},
-            ExpiresIn=expiration
-        )
-        return url
-    except ClientError as e:
-        logger.error(f"Failed to generate signed URL for {s3_uri}: {e}")
-        raise
+    url = s3_client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': bucket, 'Key': key},
+        ExpiresIn=expiration
+    )
+    return url
 
 
 def generate_signed_url_for_prefix(s3_prefix: str, expiration: int = 3600, bucket: Optional[str] = None) -> str:
@@ -225,24 +211,20 @@ def list_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = None) -> 
     prefix = get_tenant_prefix(owner_id, run_id)
     s3_client = get_s3_client()
     
-    try:
-        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        
-        if 'Contents' not in response:
-            return []
-        
-        return [
-            {
-                "key": obj["Key"],
-                "size": obj["Size"],
-                "last_modified": obj["LastModified"].isoformat(),
-                "s3_uri": f"s3://{bucket}/{obj['Key']}"
-            }
-            for obj in response["Contents"]
-        ]
-    except ClientError as e:
-        logger.error(f"Failed to list artifacts for {owner_id}/{run_id}: {e}")
-        raise
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    
+    if 'Contents' not in response:
+        return []
+    
+    return [
+        {
+            "key": obj["Key"],
+            "size": obj["Size"],
+            "last_modified": obj["LastModified"].isoformat(),
+            "s3_uri": f"s3://{bucket}/{obj['Key']}"
+        }
+        for obj in response["Contents"]
+    ]
 
 
 def delete_run_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = None) -> Dict[str, Any]:
@@ -253,33 +235,28 @@ def delete_run_artifacts(owner_id: str, run_id: str, bucket: Optional[str] = Non
     prefix = get_tenant_prefix(owner_id, run_id)
     s3_client = get_s3_client()
     
-    try:
-        # List all objects with prefix
-        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        
-        if 'Contents' not in response:
-            return {"deleted": 0, "status": "success"}
-        
-        # Delete all objects
-        objects_to_delete = [{"Key": obj["Key"]} for obj in response["Contents"]]
-        
-        if objects_to_delete:
-            delete_response = s3_client.delete_objects(
-                Bucket=bucket,
-                Delete={"Objects": objects_to_delete}
-            )
-            
-            deleted_count = len(delete_response.get("Deleted", []))
-            logger.info(f"Deleted {deleted_count} artifacts for {owner_id}/{run_id}")
-            
-            return {
-                "deleted": deleted_count,
-                "status": "success"
-            }
-        
+    # List all objects with prefix
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    
+    if 'Contents' not in response:
         return {"deleted": 0, "status": "success"}
+    
+    # Delete all objects
+    objects_to_delete = [{"Key": obj["Key"]} for obj in response["Contents"]]
+    
+    if objects_to_delete:
+        delete_response = s3_client.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": objects_to_delete}
+        )
         
-    except ClientError as e:
-        logger.error(f"Failed to delete artifacts for {owner_id}/{run_id}: {e}")
-        raise
+        deleted_count = len(delete_response.get("Deleted", []))
+        logger.info(f"Deleted {deleted_count} artifacts for {owner_id}/{run_id}")
+        
+        return {
+            "deleted": deleted_count,
+            "status": "success"
+        }
+    
+    return {"deleted": 0, "status": "success"}
 

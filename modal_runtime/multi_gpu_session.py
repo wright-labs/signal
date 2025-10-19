@@ -389,39 +389,39 @@ class TrainingSessionBase:
     ) -> Dict[str, Any]:
         """Apply optimizer update."""
         self._update_activity()
-            
-            # Only step if accumulation complete
-            if self.accumulation_count < self.accumulation_steps:
-                return {
-                    "status": "accumulating",
-                    "step": self.current_step,
-                    "accumulation_count": self.accumulation_count,
-                }
-            
-            # Override LR if provided
-            if learning_rate is not None:
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = learning_rate
-            
-            # Gradient clipping
-            if grad_clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
-            
-            # Optimizer step
-            self.optimizer.step()
-            self.optimizer.zero_grad()
-            
-            # Reset accumulation
-            self.accumulation_count = 0
-            self.current_step += 1
-            
-            # Auto-checkpoint
-            if (self.auto_checkpoint_interval > 0 and 
-                self.current_step % self.auto_checkpoint_interval == 0):
-                print(f"\n🔄 Auto-checkpoint at step {self.current_step}")
-                self._save_checkpoint_internal(tag=f"step_{self.current_step}")
-                self.last_checkpoint_step = self.current_step
-            
+        
+        # Only step if accumulation complete
+        if self.accumulation_count < self.accumulation_steps:
+            return {
+                "status": "accumulating",
+                "step": self.current_step,
+                "accumulation_count": self.accumulation_count,
+            }
+        
+        # Override LR if provided
+        if learning_rate is not None:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = learning_rate
+        
+        # Gradient clipping
+        if grad_clip:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
+        
+        # Optimizer step
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        
+        # Reset accumulation
+        self.accumulation_count = 0
+        self.current_step += 1
+        
+        # Auto-checkpoint
+        if (self.auto_checkpoint_interval > 0 and 
+            self.current_step % self.auto_checkpoint_interval == 0):
+            print(f"\n🔄 Auto-checkpoint at step {self.current_step}")
+            self._save_checkpoint_internal(tag=f"step_{self.current_step}")
+            self.last_checkpoint_step = self.current_step
+        
         current_lr = self.optimizer.param_groups[0]['lr']
         
         return {
@@ -443,31 +443,31 @@ class TrainingSessionBase:
     ) -> Dict[str, Any]:
         """Generate text samples."""
         self._update_activity()
+        
+        # Use base model for generation (unwrap if DataParallel)
+        model_to_use = self.model.module if self.is_multi_gpu else self.model
+        
+        outputs = []
+        token_ids_list = []
+        
+        model_to_use.eval()
+        for prompt in prompts:
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(model_to_use.device)
             
-            # Use base model for generation (unwrap if DataParallel)
-            model_to_use = self.model.module if self.is_multi_gpu else self.model
+            with torch.no_grad():
+                generated = model_to_use.generate(
+                    **inputs,
+                    max_new_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    do_sample=True,
+                )
             
-            outputs = []
-            token_ids_list = []
-            
-            model_to_use.eval()
-            for prompt in prompts:
-                inputs = self.tokenizer(prompt, return_tensors="pt").to(model_to_use.device)
-                
-                with torch.no_grad():
-                    generated = model_to_use.generate(
-                        **inputs,
-                        max_new_tokens=max_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        top_k=top_k,
-                        do_sample=True,
-                    )
-                
-                output_text = self.tokenizer.decode(generated[0], skip_special_tokens=True)
-                outputs.append(output_text)
-                token_ids_list.append(generated[0].tolist())
-            
+            output_text = self.tokenizer.decode(generated[0], skip_special_tokens=True)
+            outputs.append(output_text)
+            token_ids_list.append(generated[0].tolist())
+        
         model_to_use.train()
         
         return {

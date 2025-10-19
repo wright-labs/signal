@@ -204,8 +204,6 @@ async def chat_completions(
         
         return response
     
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Generation failed")
@@ -287,8 +285,6 @@ async def completions(
         
         return response
     
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Generation failed")

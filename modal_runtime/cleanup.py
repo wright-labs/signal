@@ -9,6 +9,22 @@ import modal
 from modal_runtime.app import app, data_volume, VOLUME_CONFIG, api_secret
 
 
+def safe_api_call(url: str, json_data: dict, headers: dict, operation_name: str) -> bool:
+    """Helper function to make API calls with error handling."""
+    try:
+        import requests
+        response = requests.post(url, json=json_data, headers=headers, timeout=10)
+        if response.status_code == 200:
+            print(f"  ✓ {operation_name}")
+            return True
+        else:
+            print(f"  ⚠ {operation_name} failed: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"  ⚠ {operation_name} error: {e}")
+        return False
+
+
 def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any]]:
     """Scan Modal Volume for all run directories."""
     base_dir = Path(base_path)
@@ -155,34 +171,22 @@ def cleanup_old_runs(
             
             # Update database if API URL is provided
             if api_url:
-                try:
-                    import requests
-                    
-                    # Get internal service key from environment
-                    internal_key = os.environ.get("SIGNAL_INTERNAL_SECRET")
-                    headers = {}
-                    if internal_key:
-                        headers["X-Internal-Key"] = internal_key
-                    
-                    response = requests.post(
-                        f"{api_url}/internal/mark-volume-cleaned",
-                        json={
-                            "run_id": run_id,
-                            "user_id": user_id,
-                            "bytes_freed": bytes_freed,
-                        },
-                        headers=headers,
-                        timeout=10,
-                    )
-                    
-                    if response.status_code == 200:
-                        print(f"  ✓ Database updated")
-                    else:
-                        print(f"  ⚠ Database update failed: {response.status_code}")
-                        
-                except Exception as e:
-                    print(f"  ⚠ Database update error: {e}")
-                    # Continue anyway - cleanup succeeded
+                # Get internal service key from environment
+                internal_key = os.environ.get("SIGNAL_INTERNAL_SECRET")
+                headers = {}
+                if internal_key:
+                    headers["X-Internal-Key"] = internal_key
+                
+                safe_api_call(
+                    url=f"{api_url}/internal/mark-volume-cleaned",
+                    json_data={
+                        "run_id": run_id,
+                        "user_id": user_id,
+                        "bytes_freed": bytes_freed,
+                    },
+                    headers=headers,
+                    operation_name="Database update"
+                )
             
         except Exception as e:
             error_msg = f"Failed to delete {run_path}: {e}"
@@ -300,25 +304,18 @@ def cleanup_stale_runs(
                 
                 # Try to charge remaining cost via API
                 if api_url and internal_key:
-                    try:
-                        response = requests.post(
-                            f"{api_url}/internal/charge-final-cost",
-                            json={
-                                "run_id": run_id,
-                                "user_id": user_id,
-                            },
-                            headers={"X-Internal-Key": internal_key},
-                            timeout=10,
-                        )
-                        
-                        if response.status_code == 200:
-                            charged_count += 1
-                            print(f"    ✓ Charged final cost")
-                        else:
-                            print(f"    ⚠ Failed to charge: {response.status_code}")
-                            charge_errors.append(run_id)
-                    except Exception as e:
-                        print(f"    ⚠ Charge error: {e}")
+                    success = safe_api_call(
+                        url=f"{api_url}/internal/charge-final-cost",
+                        json_data={
+                            "run_id": run_id,
+                            "user_id": user_id,
+                        },
+                        headers={"X-Internal-Key": internal_key},
+                        operation_name="Charge final cost"
+                    )
+                    if success:
+                        charged_count += 1
+                    else:
                         charge_errors.append(run_id)
             
             print("\n" + "=" * 80)

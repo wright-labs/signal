@@ -154,13 +154,36 @@ def apply_lora_to_model(
     return model
 
 
+def _load_as_peft_model(model: Any, checkpoint_path: Path) -> Any:
+    """Load checkpoint as PEFT model."""
+    from peft import PeftModel
+    
+    # Get the base model from the PEFT wrapper
+    base_model = model.base_model if hasattr(model, 'base_model') else model
+    
+    # Load adapter weights
+    model = PeftModel.from_pretrained(
+        base_model,
+        str(checkpoint_path),
+        is_trainable=True,
+    )
+    print(f"✓ Loaded PEFT checkpoint")
+    return model
+
+
+def _load_state_dict(model: Any, checkpoint_file: Path) -> Any:
+    """Load checkpoint as state dict."""
+    state_dict = torch.load(checkpoint_file, map_location="cpu")
+    model.load_state_dict(state_dict, strict=False)
+    print(f"✓ Loaded checkpoint from {checkpoint_file.name}")
+    return model
+
+
 def load_lora_checkpoint(
     model: Any,
     checkpoint_path: str,
 ) -> Any:
     """Load LoRA checkpoint into model."""
-    from peft import PeftModel
-    
     checkpoint_path = Path(checkpoint_path)
     
     if not checkpoint_path.exists():
@@ -168,48 +191,22 @@ def load_lora_checkpoint(
     
     print(f"Loading LoRA checkpoint from {checkpoint_path}...")
     
-    # Check if this is a full adapter directory with adapter_config.json
+    # Try PEFT format first (most common) - check for adapter_config.json
     adapter_config = checkpoint_path / "adapter_config.json"
     if adapter_config.exists():
-        # Load as PEFT model
-        try:
-            # Get the base model from the PEFT wrapper
-            base_model = model.base_model if hasattr(model, 'base_model') else model
-            
-            # Load adapter weights
-            model = PeftModel.from_pretrained(
-                base_model,
-                str(checkpoint_path),
-                is_trainable=True,
-            )
-            print(f"✓ Loaded PEFT checkpoint")
-        except Exception as e:
-            print(f"Warning: Failed to load as PEFT model: {e}")
-            # Try loading state dict directly
-            adapter_model = checkpoint_path / "adapter_model.bin"
-            if adapter_model.exists():
-                state_dict = torch.load(adapter_model, map_location="cpu")
-                model.load_state_dict(state_dict, strict=False)
-                print(f"✓ Loaded adapter weights from state dict")
-            else:
-                raise FileNotFoundError(f"No adapter_model.bin found in {checkpoint_path}")
-    else:
-        # Try loading as state dict
-        adapter_model = checkpoint_path / "adapter_model.bin"
-        if adapter_model.exists():
-            state_dict = torch.load(adapter_model, map_location="cpu")
-            model.load_state_dict(state_dict, strict=False)
-            print(f"✓ Loaded adapter weights from state dict")
-        else:
-            # Try loading PyTorch checkpoint directly
-            if checkpoint_path.suffix == ".pt" or checkpoint_path.suffix == ".bin":
-                state_dict = torch.load(checkpoint_path, map_location="cpu")
-                model.load_state_dict(state_dict, strict=False)
-                print(f"✓ Loaded checkpoint from file")
-            else:
-                raise FileNotFoundError(
-                    f"Could not find adapter checkpoint at {checkpoint_path}. "
-                    f"Expected adapter_config.json + adapter_model.bin or a .pt/.bin file."
-                )
+        return _load_as_peft_model(model, checkpoint_path)
     
-    return model
+    # Try state dict format - check for adapter_model.bin
+    adapter_model = checkpoint_path / "adapter_model.bin"
+    if adapter_model.exists():
+        return _load_state_dict(model, adapter_model)
+    
+    # Try as direct checkpoint file (.pt or .bin)
+    if checkpoint_path.suffix in [".pt", ".bin"]:
+        return _load_state_dict(model, checkpoint_path)
+    
+    # Nothing worked
+    raise FileNotFoundError(
+        f"No valid checkpoint found at {checkpoint_path}. "
+        f"Expected: adapter_config.json + adapter_model.bin, or a .pt/.bin file."
+    )
