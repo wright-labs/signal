@@ -83,13 +83,13 @@ class TrainingExample(BaseModel):
     4. PPO (Proximal Policy Optimization): {"prompt": "...", "response": "...", "reward": 1.0, "value": 0.5}
     """
     # SFT formats
-    text: Optional[str] = Field(None, max_length=32768, description="Raw text for SFT (max 32K chars)")
+    text: Optional[str] = Field(None, min_length=1, max_length=32768, description="Raw text for SFT (max 32K chars)")
     messages: Optional[List[Dict[str, str]]] = Field(None, max_length=50, description="Chat messages for SFT (max 50)")
 
     # DPO format
-    prompt: Optional[str] = Field(None, max_length=32768, description="Prompt for preference-based methods")
-    chosen: Optional[str] = Field(None, max_length=32768, description="Chosen response for DPO")
-    rejected: Optional[str] = Field(None, max_length=32768, description="Rejected response for DPO")
+    prompt: Optional[str] = Field(None, min_length=1, max_length=32768, description="Prompt for preference-based methods")
+    chosen: Optional[str] = Field(None, min_length=1, max_length=32768, description="Chosen response for DPO")
+    rejected: Optional[str] = Field(None, min_length=1, max_length=32768, description="Rejected response for DPO")
 
     # GRPO format
     responses: Optional[List[str]] = Field(None, max_length=16, description="Multiple responses for GRPO (max 16)")
@@ -99,34 +99,6 @@ class TrainingExample(BaseModel):
     response: Optional[str] = Field(None, max_length=32768, description="Single response for PPO")
     reward: Optional[float] = Field(None, description="Reward score for PPO response")
     value: Optional[float] = Field(None, description="Value function estimate for PPO")
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text_not_empty(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure text is not empty if provided."""
-        if v is not None and len(v.strip()) == 0:
-            raise ValueError("Text cannot be empty or whitespace only")
-        return v
-    
-    @field_validator('messages')
-    @classmethod
-    def validate_messages_format(cls, v: Optional[List[Dict[str, str]]]) -> Optional[List[Dict[str, str]]]:
-        """Validate message format."""
-        if v is not None:
-            for msg in v:
-                if 'role' not in msg or 'content' not in msg:
-                    raise ValueError("Each message must have 'role' and 'content' keys")
-                if msg['role'] not in ['system', 'user', 'assistant']:
-                    raise ValueError("Message role must be 'system', 'user', or 'assistant'")
-        return v
-    
-    @field_validator('prompt', 'chosen', 'rejected')
-    @classmethod
-    def validate_preference_not_empty(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure preference fields are not empty if provided."""
-        if v is not None and len(v.strip()) == 0:
-            raise ValueError("Preference field cannot be empty or whitespace only")
-        return v
     
     @model_validator(mode='after')
     def validate_format(self) -> 'TrainingExample':
