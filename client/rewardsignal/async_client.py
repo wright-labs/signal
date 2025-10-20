@@ -8,7 +8,6 @@ from .schemas import (
     RunResponse,
     RunStatus,
     RunMetrics,
-    TrainingExample,
     ForwardBackwardResponse,
     OptimStepResponse,
     SampleResponse,
@@ -48,7 +47,7 @@ class AsyncSignalRun:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         **loss_kwargs
-    ) -> Dict[str, Any]:
+    ) -> ForwardBackwardResponse:
         """Perform forward-backward pass (blocking)."""
         return await self.client.forward_backward(
             run_id=self.run_id,
@@ -61,7 +60,7 @@ class AsyncSignalRun:
     async def optim_step(
         self,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> OptimStepResponse:
         """Apply optimizer step."""
         return await self.client.optim_step(
             run_id=self.run_id,
@@ -75,7 +74,7 @@ class AsyncSignalRun:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> SampleResponse:
         """Generate samples."""
         return await self.client.sample(
             run_id=self.run_id,
@@ -91,7 +90,7 @@ class AsyncSignalRun:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> SaveStateResponse:
         """Save model state."""
         return await self.client.save_state(
             run_id=self.run_id,
@@ -158,11 +157,11 @@ class AsyncSignalRun:
             hub_model_id=hub_model_id,
         )
     
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> RunStatus:
         """Get run status."""
         return await self.client.get_run_status(self.run_id)
     
-    async def get_metrics(self) -> Dict[str, Any]:
+    async def get_metrics(self) -> RunMetrics:
         """Get run metrics."""
         return await self.client.get_run_metrics(self.run_id)
     
@@ -170,7 +169,7 @@ class AsyncSignalRun:
         self,
         text: str | List[str],
         add_special_tokens: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> TokenizeResponse:
         """Tokenize text using the model's tokenizer."""
         return await self.client.tokenize(
             run_id=self.run_id,
@@ -181,18 +180,18 @@ class AsyncSignalRun:
     async def detokenize(
         self,
         token_ids: List[int] | List[List[int]],
-    ) -> Dict[str, Any]:
+    ) -> DetokenizeResponse:
         """Detokenize token IDs using the model's tokenizer."""
         return await self.client.detokenize(
             run_id=self.run_id,
             token_ids=token_ids,
         )
     
-    async def get_tokenizer_info(self) -> Dict[str, Any]:
+    async def get_tokenizer_info(self) -> TokenizerInfoResponse:
         """Get tokenizer configuration information."""
         return await self.client.get_tokenizer_info(self.run_id)
     
-    async def get_model_info(self) -> Dict[str, Any]:
+    async def get_model_info(self) -> ModelInfoResponse:
         """Get model architecture information."""
         return await self.client.get_model_info(self.run_id)
     
@@ -200,7 +199,7 @@ class AsyncSignalRun:
         self,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> ApplyChatTemplateResponse:
         """Apply the model's chat template to format messages."""
         return await self.client.apply_chat_template(
             run_id=self.run_id,
@@ -346,12 +345,13 @@ class AsyncSignalClient:
             gradient_checkpointing=gradient_checkpointing,
         )
         
-        response = await self._request("POST", "/runs", json=config.model_dump())
+        response_data = await self._request("POST", "/runs", json=config.model_dump())
+        response = RunResponse(**response_data)
         
         return AsyncSignalRun(
             client=self,
-            run_id=response["run_id"],
-            config=response["config"],
+            run_id=response.run_id,
+            config=response.config,
         )
     
     async def forward_backward(
@@ -361,7 +361,7 @@ class AsyncSignalClient:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> ForwardBackwardResponse:
         """Perform forward-backward pass."""
         if loss_kwargs is None:
             loss_kwargs = {}
@@ -373,8 +373,8 @@ class AsyncSignalClient:
             "loss_kwargs": loss_kwargs,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
-        return response
+        response_data = await self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
+        return ForwardBackwardResponse(**response_data)
     
     async def forward_backward_async(
         self,
@@ -402,14 +402,14 @@ class AsyncSignalClient:
         self,
         run_id: str,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> OptimStepResponse:
         """Apply optimizer step."""
         payload = {
             "learning_rate": learning_rate,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
-        return response
+        response_data = await self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
+        return OptimStepResponse(**response_data)
     
     async def optim_step_async(
         self,
@@ -432,7 +432,7 @@ class AsyncSignalClient:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> SampleResponse:
         """Generate samples."""
         payload = {
             "prompts": prompts,
@@ -442,8 +442,8 @@ class AsyncSignalClient:
             "return_logprobs": return_logprobs,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/sample", json=payload)
-        return response
+        response_data = await self._request("POST", f"/runs/{run_id}/sample", json=payload)
+        return SampleResponse(**response_data)
     
     async def sample_async(
         self,
@@ -472,7 +472,7 @@ class AsyncSignalClient:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> SaveStateResponse:
         """Save model state."""
         payload = {
             "mode": mode,
@@ -480,8 +480,8 @@ class AsyncSignalClient:
             "hub_model_id": hub_model_id,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/save_state", json=payload)
-        return response
+        response_data = await self._request("POST", f"/runs/{run_id}/save_state", json=payload)
+        return SaveStateResponse(**response_data)
     
     async def save_state_async(
         self,
@@ -500,13 +500,15 @@ class AsyncSignalClient:
         response = await self._request("POST", f"/runs/{run_id}/save_state_async", json=payload)
         return APIFuture(client=self, future_id=response["future_id"])
     
-    async def get_run_status(self, run_id: str) -> Dict[str, Any]:
+    async def get_run_status(self, run_id: str) -> RunStatus:
         """Get run status."""
-        return await self._request("GET", f"/runs/{run_id}/status")
+        response_data = await self._request("GET", f"/runs/{run_id}/status")
+        return RunStatus(**response_data)
     
-    async def get_run_metrics(self, run_id: str) -> Dict[str, Any]:
+    async def get_run_metrics(self, run_id: str) -> RunMetrics:
         """Get run metrics."""
-        return await self._request("GET", f"/runs/{run_id}/metrics")
+        response_data = await self._request("GET", f"/runs/{run_id}/metrics")
+        return RunMetrics(**response_data)
     
     async def list_runs(self) -> List[Dict[str, Any]]:
         """List all runs."""
