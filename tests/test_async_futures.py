@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 @pytest.mark.asyncio
 async def test_async_forward_backward_with_future():
-    """Test forward_backward with return_future=True returns APIFuture."""
+    """Test forward_backward_async returns APIFuture."""
     from client.rewardsignal import AsyncSignalClient
     from client.rewardsignal.futures import APIFuture
     
@@ -20,25 +20,24 @@ async def test_async_forward_backward_with_future():
         mock_request.return_value = mock_response
         
         async with AsyncSignalClient(api_key="test-key", base_url="http://localhost:8000") as client:
-            result = await client.forward_backward(
+            result = await client.forward_backward_async(
                 run_id="test-run",
                 batch=[{"text": "Hello world"}],
-                return_future=True,
             )
             
             # Should return APIFuture
             assert isinstance(result, APIFuture)
             assert result.future_id == "test-future-123"
             
-            # Verify request was made with correct params
+            # Verify request was made to async endpoint
             mock_request.assert_called_once()
             call_args = mock_request.call_args
-            assert "/forward_backward?return_future=true" in call_args[0][1]
+            assert "/forward_backward_async" in call_args[0][1]
 
 
 @pytest.mark.asyncio
 async def test_async_optim_step_with_future():
-    """Test optim_step with return_future=True returns APIFuture."""
+    """Test optim_step_async returns APIFuture."""
     from client.rewardsignal import AsyncSignalClient
     from client.rewardsignal.futures import APIFuture
     
@@ -51,10 +50,9 @@ async def test_async_optim_step_with_future():
         mock_request.return_value = mock_response
         
         async with AsyncSignalClient(api_key="test-key", base_url="http://localhost:8000") as client:
-            result = await client.optim_step(
+            result = await client.optim_step_async(
                 run_id="test-run",
                 learning_rate=3e-4,
-                return_future=True,
             )
             
             assert isinstance(result, APIFuture)
@@ -63,7 +61,7 @@ async def test_async_optim_step_with_future():
 
 @pytest.mark.asyncio
 async def test_async_sample_with_future():
-    """Test sample with return_future=True returns APIFuture."""
+    """Test sample_async returns APIFuture."""
     from client.rewardsignal import AsyncSignalClient
     from client.rewardsignal.futures import APIFuture
     
@@ -76,10 +74,9 @@ async def test_async_sample_with_future():
         mock_request.return_value = mock_response
         
         async with AsyncSignalClient(api_key="test-key", base_url="http://localhost:8000") as client:
-            result = await client.sample(
+            result = await client.sample_async(
                 run_id="test-run",
                 prompts=["Hello"],
-                return_future=True,
             )
             
             assert isinstance(result, APIFuture)
@@ -88,7 +85,7 @@ async def test_async_sample_with_future():
 
 @pytest.mark.asyncio
 async def test_async_save_state_with_future():
-    """Test save_state with return_future=True returns APIFuture."""
+    """Test save_state_async returns APIFuture."""
     from client.rewardsignal import AsyncSignalClient
     from client.rewardsignal.futures import APIFuture
     
@@ -101,10 +98,9 @@ async def test_async_save_state_with_future():
         mock_request.return_value = mock_response
         
         async with AsyncSignalClient(api_key="test-key", base_url="http://localhost:8000") as client:
-            result = await client.save_state(
+            result = await client.save_state_async(
                 run_id="test-run",
                 mode="adapter",
-                return_future=True,
             )
             
             assert isinstance(result, APIFuture)
@@ -161,7 +157,7 @@ async def test_future_error_handling():
 
 @pytest.mark.asyncio
 async def test_synchronous_execution_still_works():
-    """Test that synchronous execution (return_future=False) still works."""
+    """Test that synchronous execution (blocking) works."""
     from client.rewardsignal import AsyncSignalClient
     
     mock_response = {
@@ -177,7 +173,6 @@ async def test_synchronous_execution_still_works():
             result = await client.forward_backward(
                 run_id="test-run",
                 batch=[{"text": "Hello world"}],
-                return_future=False,  # Explicit sync
             )
             
             # Should return result directly (not a future)

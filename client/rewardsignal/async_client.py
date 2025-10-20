@@ -37,13 +37,7 @@ class AsyncSignalRun:
     """Represents a training run with convenient async methods."""
     
     def __init__(self, client: "AsyncSignalClient", run_id: str, config: Dict[str, Any]):
-        """Initialize a training run.
-        
-        Args:
-            client: AsyncSignalClient instance
-            run_id: Run identifier
-            config: Run configuration
-        """
+        """Initialize a training run."""
         self.client = client
         self.run_id = run_id
         self.config = config
@@ -55,17 +49,7 @@ class AsyncSignalRun:
         loss_fn: str = "causal_lm",
         **loss_kwargs
     ) -> Dict[str, Any]:
-        """Perform forward-backward pass.
-        
-        Args:
-            batch: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
-            **loss_kwargs: Additional arguments for the loss function
-            
-        Returns:
-            Response with loss and gradient stats
-        """
+        """Perform forward-backward pass (blocking)."""
         return await self.client.forward_backward(
             run_id=self.run_id,
             batch=batch,
@@ -78,14 +62,7 @@ class AsyncSignalRun:
         self,
         learning_rate: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Apply optimizer step.
-        
-        Args:
-            learning_rate: Optional learning rate override
-            
-        Returns:
-            Response with step metrics
-        """
+        """Apply optimizer step."""
         return await self.client.optim_step(
             run_id=self.run_id,
             learning_rate=learning_rate,
@@ -99,18 +76,7 @@ class AsyncSignalRun:
         top_p: float = 0.9,
         return_logprobs: bool = False,
     ) -> Dict[str, Any]:
-        """Generate samples.
-        
-        Args:
-            prompts: List of prompts
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            return_logprobs: Whether to return log probabilities
-            
-        Returns:
-            Response with generated outputs
-        """
+        """Generate samples."""
         return await self.client.sample(
             run_id=self.run_id,
             prompts=prompts,
@@ -126,16 +92,7 @@ class AsyncSignalRun:
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Save model state.
-        
-        Args:
-            mode: Save mode ('adapter' or 'merged')
-            push_to_hub: Whether to push to HuggingFace Hub
-            hub_model_id: HuggingFace Hub model ID
-            
-        Returns:
-            Response with artifact information
-        """
+        """Save model state."""
         return await self.client.save_state(
             run_id=self.run_id,
             mode=mode,
@@ -143,20 +100,70 @@ class AsyncSignalRun:
             hub_model_id=hub_model_id,
         )
     
+    async def forward_backward_async(
+        self,
+        batch: List[Dict[str, Any]],
+        accumulate: bool = False,
+        loss_fn: str = "causal_lm",
+        **loss_kwargs
+    ) -> APIFuture:
+        """Perform forward-backward pass (async)."""
+        return await self.client.forward_backward_async(
+            run_id=self.run_id,
+            batch=batch,
+            accumulate=accumulate,
+            loss_fn=loss_fn,
+            loss_kwargs=loss_kwargs,
+        )
+    
+    async def optim_step_async(
+        self,
+        learning_rate: Optional[float] = None,
+    ) -> APIFuture:
+        """Apply optimizer step (async)."""
+        return await self.client.optim_step_async(
+            run_id=self.run_id,
+            learning_rate=learning_rate,
+        )
+    
+    async def sample_async(
+        self,
+        prompts: List[str],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        return_logprobs: bool = False,
+    ) -> APIFuture:
+        """Generate samples (async)."""
+        return await self.client.sample_async(
+            run_id=self.run_id,
+            prompts=prompts,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            return_logprobs=return_logprobs,
+        )
+    
+    async def save_state_async(
+        self,
+        mode: Literal["adapter", "merged"] = "adapter",
+        push_to_hub: bool = False,
+        hub_model_id: Optional[str] = None,
+    ) -> APIFuture:
+        """Save model state (async)."""
+        return await self.client.save_state_async(
+            run_id=self.run_id,
+            mode=mode,
+            push_to_hub=push_to_hub,
+            hub_model_id=hub_model_id,
+        )
+    
     async def get_status(self) -> Dict[str, Any]:
-        """Get run status.
-        
-        Returns:
-            Run status information
-        """
+        """Get run status."""
         return await self.client.get_run_status(self.run_id)
     
     async def get_metrics(self) -> Dict[str, Any]:
-        """Get run metrics.
-        
-        Returns:
-            Run metrics
-        """
+        """Get run metrics."""
         return await self.client.get_run_metrics(self.run_id)
     
     async def tokenize(
@@ -164,15 +171,7 @@ class AsyncSignalRun:
         text: str | List[str],
         add_special_tokens: bool = True,
     ) -> Dict[str, Any]:
-        """Tokenize text using the model's tokenizer.
-        
-        Args:
-            text: Text string or list of strings to tokenize
-            add_special_tokens: Whether to add special tokens
-            
-        Returns:
-            Response with token_ids and tokens
-        """
+        """Tokenize text using the model's tokenizer."""
         return await self.client.tokenize(
             run_id=self.run_id,
             text=text,
@@ -183,33 +182,18 @@ class AsyncSignalRun:
         self,
         token_ids: List[int] | List[List[int]],
     ) -> Dict[str, Any]:
-        """Detokenize token IDs using the model's tokenizer.
-        
-        Args:
-            token_ids: Token IDs (single list or list of lists)
-            
-        Returns:
-            Response with decoded text
-        """
+        """Detokenize token IDs using the model's tokenizer."""
         return await self.client.detokenize(
             run_id=self.run_id,
             token_ids=token_ids,
         )
     
     async def get_tokenizer_info(self) -> Dict[str, Any]:
-        """Get tokenizer configuration information.
-        
-        Returns:
-            Tokenizer information including vocab size and special tokens
-        """
+        """Get tokenizer configuration information."""
         return await self.client.get_tokenizer_info(self.run_id)
     
     async def get_model_info(self) -> Dict[str, Any]:
-        """Get model architecture information.
-        
-        Returns:
-            Model information including architecture and parameter counts
-        """
+        """Get model architecture information."""
         return await self.client.get_model_info(self.run_id)
     
     async def apply_chat_template(
@@ -217,15 +201,7 @@ class AsyncSignalRun:
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
     ) -> Dict[str, Any]:
-        """Apply the model's chat template to format messages.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            add_generation_prompt: Whether to add generation prompt
-            
-        Returns:
-            Response with formatted text and token_ids
-        """
+        """Apply the model's chat template to format messages."""
         return await self.client.apply_chat_template(
             run_id=self.run_id,
             messages=messages,
@@ -242,13 +218,7 @@ class AsyncSignalClient:
         base_url: str = "https://signal-production-d2d8.up.railway.app",
         timeout: int = 300,
     ):
-        """Initialize the async client.
-        
-        Args:
-            api_key: API key for authentication
-            base_url: Base URL of the API server (defaults to production Railway deployment)
-            timeout: Request timeout in seconds (default: 300)
-        """
+        """Initialize the async client."""
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -276,11 +246,7 @@ class AsyncSignalClient:
             self._client = None
     
     def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client.
-        
-        Returns:
-            AsyncClient instance
-        """
+        """Get or create the HTTP client."""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 headers={
@@ -292,14 +258,7 @@ class AsyncSignalClient:
         return self._client
     
     def _handle_error(self, response: httpx.Response) -> None:
-        """Handle error responses.
-        
-        Args:
-            response: HTTP response
-            
-        Raises:
-            SignalAPIError: Appropriate exception based on status code
-        """
+        """Handle error responses."""
         # Parse error data once, default to None if parsing fails
         error_data = None
         try:
@@ -331,19 +290,7 @@ class AsyncSignalClient:
         endpoint: str,
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """Make a request to the API.
-        
-        Args:
-            method: HTTP method
-            endpoint: API endpoint
-            json: Optional JSON payload
-            
-        Returns:
-            Response data
-            
-        Raises:
-            SignalAPIError: If request fails
-        """
+        """Make a request to the API."""
         url = f"{self.base_url}{endpoint}"
         client = self._get_client()
         
@@ -366,11 +313,7 @@ class AsyncSignalClient:
         return response.json()
     
     async def list_models(self) -> List[str]:
-        """List available models.
-        
-        Returns:
-            List of model names
-        """
+        """List available models."""
         response = await self._request("GET", "/models")
         return response["models"]
     
@@ -388,24 +331,7 @@ class AsyncSignalClient:
         bf16: bool = True,
         gradient_checkpointing: bool = True,
     ) -> AsyncSignalRun:
-        """Create a new training run.
-        
-        Args:
-            base_model: Base model name
-            lora_r: LoRA rank
-            lora_alpha: LoRA alpha
-            lora_dropout: LoRA dropout
-            lora_target_modules: Target modules for LoRA
-            optimizer: Optimizer type
-            learning_rate: Learning rate
-            weight_decay: Weight decay
-            max_seq_length: Maximum sequence length
-            bf16: Use bfloat16
-            gradient_checkpointing: Enable gradient checkpointing
-            
-        Returns:
-            AsyncSignalRun instance
-        """
+        """Create a new training run."""
         config = RunConfig(
             base_model=base_model,
             lora_r=lora_r,
@@ -436,21 +362,7 @@ class AsyncSignalClient:
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Perform forward-backward pass (blocking).
-        
-        Waits for completion and returns results immediately.
-        For async execution, use forward_backward_async().
-        
-        Args:
-            run_id: Run identifier
-            batch: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
-            loss_kwargs: Additional arguments for the loss function
-            
-        Returns:
-            Response with loss and gradient stats
-        """
+        """Perform forward-backward pass."""
         if loss_kwargs is None:
             loss_kwargs = {}
             
@@ -472,21 +384,7 @@ class AsyncSignalClient:
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
     ) -> APIFuture:
-        """Perform forward-backward pass (async).
-        
-        Returns immediately with APIFuture for polling.
-        Use await on the returned future to get results.
-        
-        Args:
-            run_id: Run identifier
-            batch: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
-            loss_kwargs: Additional arguments for the loss function
-            
-        Returns:
-            APIFuture that can be awaited for results
-        """
+        """Perform forward-backward pass (async)."""
         if loss_kwargs is None:
             loss_kwargs = {}
             
@@ -505,18 +403,7 @@ class AsyncSignalClient:
         run_id: str,
         learning_rate: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Apply optimizer step (blocking).
-        
-        Waits for completion and returns results immediately.
-        For async execution, use optim_step_async().
-        
-        Args:
-            run_id: Run identifier
-            learning_rate: Optional learning rate override
-            
-        Returns:
-            Response with step metrics
-        """
+        """Apply optimizer step."""
         payload = {
             "learning_rate": learning_rate,
         }
@@ -529,18 +416,7 @@ class AsyncSignalClient:
         run_id: str,
         learning_rate: Optional[float] = None,
     ) -> APIFuture:
-        """Apply optimizer step (async).
-        
-        Returns immediately with APIFuture for polling.
-        Use await on the returned future to get results.
-        
-        Args:
-            run_id: Run identifier
-            learning_rate: Optional learning rate override
-            
-        Returns:
-            APIFuture that can be awaited for results
-        """
+        """Apply optimizer step (async)."""
         payload = {
             "learning_rate": learning_rate,
         }
@@ -556,22 +432,8 @@ class AsyncSignalClient:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-        return_future: bool = False,
-    ) -> Union[Dict[str, Any], APIFuture]:
-        """Generate samples.
-        
-        Args:
-            run_id: Run identifier
-            prompts: List of prompts
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            return_logprobs: Whether to return log probabilities
-            return_future: If True, returns APIFuture for async polling
-            
-        Returns:
-            Response with generated outputs, or APIFuture if return_future=True
-        """
+    ) -> Dict[str, Any]:
+        """Generate samples."""
         payload = {
             "prompts": prompts,
             "max_tokens": max_tokens,
@@ -580,18 +442,29 @@ class AsyncSignalClient:
             "return_logprobs": return_logprobs,
         }
         
-        # Add return_future as query param
-        endpoint = f"/runs/{run_id}/sample"
-        if return_future:
-            endpoint += "?return_future=true"
-        
-        response = await self._request("POST", endpoint, json=payload)
-        
-        if return_future and "future_id" in response:
-            # Return APIFuture for polling
-            return APIFuture(client=self, future_id=response["future_id"])
-        
+        response = await self._request("POST", f"/runs/{run_id}/sample", json=payload)
         return response
+    
+    async def sample_async(
+        self,
+        run_id: str,
+        prompts: List[str],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        return_logprobs: bool = False,
+    ) -> APIFuture:
+        """Generate samples (async)."""
+        payload = {
+            "prompts": prompts,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "return_logprobs": return_logprobs,
+        }
+        
+        response = await self._request("POST", f"/runs/{run_id}/sample_async", json=payload)
+        return APIFuture(client=self, future_id=response["future_id"])
     
     async def save_state(
         self,
@@ -599,67 +472,44 @@ class AsyncSignalClient:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-        return_future: bool = False,
-    ) -> Union[Dict[str, Any], APIFuture]:
-        """Save model state.
-        
-        Args:
-            run_id: Run identifier
-            mode: Save mode ('adapter' or 'merged')
-            push_to_hub: Whether to push to HuggingFace Hub
-            hub_model_id: HuggingFace Hub model ID
-            return_future: If True, returns APIFuture for async polling
-            
-        Returns:
-            Response with artifact information, or APIFuture if return_future=True
-        """
+    ) -> Dict[str, Any]:
+        """Save model state."""
         payload = {
             "mode": mode,
             "push_to_hub": push_to_hub,
             "hub_model_id": hub_model_id,
         }
         
-        # Add return_future as query param
-        endpoint = f"/runs/{run_id}/save_state"
-        if return_future:
-            endpoint += "?return_future=true"
-        
-        response = await self._request("POST", endpoint, json=payload)
-        
-        if return_future and "future_id" in response:
-            # Return APIFuture for polling
-            return APIFuture(client=self, future_id=response["future_id"])
-        
+        response = await self._request("POST", f"/runs/{run_id}/save_state", json=payload)
         return response
     
-    async def get_run_status(self, run_id: str) -> Dict[str, Any]:
-        """Get run status.
+    async def save_state_async(
+        self,
+        run_id: str,
+        mode: Literal["adapter", "merged"] = "adapter",
+        push_to_hub: bool = False,
+        hub_model_id: Optional[str] = None,
+    ) -> APIFuture:
+        """Save model state (async)."""
+        payload = {
+            "mode": mode,
+            "push_to_hub": push_to_hub,
+            "hub_model_id": hub_model_id,
+        }
         
-        Args:
-            run_id: Run identifier
-            
-        Returns:
-            Run status information
-        """
+        response = await self._request("POST", f"/runs/{run_id}/save_state_async", json=payload)
+        return APIFuture(client=self, future_id=response["future_id"])
+    
+    async def get_run_status(self, run_id: str) -> Dict[str, Any]:
+        """Get run status."""
         return await self._request("GET", f"/runs/{run_id}/status")
     
     async def get_run_metrics(self, run_id: str) -> Dict[str, Any]:
-        """Get run metrics.
-        
-        Args:
-            run_id: Run identifier
-            
-        Returns:
-            Run metrics
-        """
+        """Get run metrics."""
         return await self._request("GET", f"/runs/{run_id}/metrics")
     
     async def list_runs(self) -> List[Dict[str, Any]]:
-        """List all runs.
-        
-        Returns:
-            List of runs
-        """
+        """List all runs."""
         response = await self._request("GET", "/runs")
         return response["runs"]
     
@@ -669,16 +519,7 @@ class AsyncSignalClient:
         text: str | List[str],
         add_special_tokens: bool = True,
     ) -> Dict[str, Any]:
-        """Tokenize text using the model's tokenizer.
-        
-        Args:
-            run_id: Run identifier
-            text: Text string or list of strings to tokenize
-            add_special_tokens: Whether to add special tokens
-            
-        Returns:
-            Response with token_ids and tokens
-        """
+        """Tokenize text using the model's tokenizer."""
         return await self._request(
             "POST",
             f"/runs/{run_id}/tokenize",
@@ -690,15 +531,7 @@ class AsyncSignalClient:
         run_id: str,
         token_ids: List[int] | List[List[int]],
     ) -> Dict[str, Any]:
-        """Detokenize token IDs using the model's tokenizer.
-        
-        Args:
-            run_id: Run identifier
-            token_ids: Token IDs (single list or list of lists)
-            
-        Returns:
-            Response with decoded text
-        """
+        """Detokenize token IDs using the model's tokenizer."""
         return await self._request(
             "POST",
             f"/runs/{run_id}/detokenize",
@@ -706,25 +539,11 @@ class AsyncSignalClient:
         )
     
     async def get_tokenizer_info(self, run_id: str) -> Dict[str, Any]:
-        """Get tokenizer configuration information.
-        
-        Args:
-            run_id: Run identifier
-            
-        Returns:
-            Tokenizer information including vocab size and special tokens
-        """
+        """Get tokenizer configuration information."""
         return await self._request("GET", f"/runs/{run_id}/tokenizer_info")
     
     async def get_model_info(self, run_id: str) -> Dict[str, Any]:
-        """Get model architecture information.
-        
-        Args:
-            run_id: Run identifier
-            
-        Returns:
-            Model information including architecture and parameter counts
-        """
+        """Get model architecture information."""
         return await self._request("GET", f"/runs/{run_id}/model_info")
     
     async def apply_chat_template(
@@ -733,16 +552,7 @@ class AsyncSignalClient:
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
     ) -> Dict[str, Any]:
-        """Apply the model's chat template to format messages.
-        
-        Args:
-            run_id: Run identifier
-            messages: List of message dicts with 'role' and 'content'
-            add_generation_prompt: Whether to add generation prompt
-            
-        Returns:
-            Response with formatted text and token_ids
-        """
+        """Apply the model's chat template to format messages."""
         return await self._request(
             "POST",
             f"/runs/{run_id}/apply_chat_template",

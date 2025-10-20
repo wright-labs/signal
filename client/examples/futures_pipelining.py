@@ -1,33 +1,32 @@
 """Example: Request pipelining with futures for maximum throughput.
 
-This example demonstrates Signal's double-await pattern for overlapping
-request submission with execution, achieving maximum GPU utilization.
-
-Set environment variable: SIGNAL_ENABLE_FUTURES=true
+This example demonstrates Signal's double-await pattern using _async methods
+for overlapping request submission with execution, achieving maximum GPU utilization.
 """
 
 import asyncio
-import os
 import time
-from rewardsignal.async_training_client_v2 import AsyncTrainingClientV2
+from rewardsignal import AsyncSignalClient
 from rewardsignal.futures import FutureGroup
 
 
 async def main():
-    # Enable futures mode
-    os.environ["SIGNAL_ENABLE_FUTURES"] = "true"
-    
-    # Initialize V2 client with futures support
-    client = AsyncTrainingClientV2(
-        run_id="your-run-id-here",
+    # Initialize client
+    async with AsyncSignalClient(
         api_key="your-api-key-here",
-        enable_futures=True,
-        max_concurrent_requests=3,  # Allow 3 concurrent in-flight requests
-    )
-    
-    async with client:
-        print("=== Futures Mode Enabled ===")
-        print(f"Max concurrent requests: {client.max_concurrent_requests}\n")
+        base_url="http://localhost:8000",  # Or production URL
+    ) as client:
+        # Create a training run
+        print("Creating training run...")
+        run = await client.create_run(
+            base_model="meta-llama/Llama-3.2-3B",
+            lora_r=32,
+            lora_alpha=64,
+            learning_rate=3e-4,
+        )
+        print(f"Created run: {run.run_id}\n")
+        
+        print("=== Futures Mode with Async Methods ===\n")
         
         # Example 1: Simple double-await pattern
         print("Example 1: Simple Double-Await")
@@ -38,10 +37,10 @@ async def main():
         
         # First await: Submit request (non-blocking)
         start = time.time()
-        future1 = await client.forward_backward_async(batch1, "causal_lm")
+        future1 = await run.forward_backward_async(batch1, loss_fn="causal_lm")
         print(f"✓ Request 1 submitted ({(time.time() - start)*1000:.1f}ms)")
         
-        future2 = await client.forward_backward_async(batch2, "causal_lm")
+        future2 = await run.forward_backward_async(batch2, loss_fn="causal_lm")
         print(f"✓ Request 2 submitted ({(time.time() - start)*1000:.1f}ms)")
         
         # Second await: Wait for results (blocking)
@@ -65,7 +64,7 @@ async def main():
         # Submit all forward-backward requests first
         fb_futures = []
         for i, batch in enumerate(batches):
-            future = await client.forward_backward_async(batch, "causal_lm")
+            future = await run.forward_backward_async(batch, loss_fn="causal_lm")
             fb_futures.append(future)
             print(f"✓ FB request {i+1} submitted ({(time.time() - start)*1000:.1f}ms)")
         
@@ -76,7 +75,7 @@ async def main():
             print(f"✓ FB request {i+1} completed: loss={fb_result['loss']:.4f}")
             
             # Submit optimizer step
-            opt_future = await client.optim_step_async()
+            opt_future = await run.optim_step_async()
             opt_futures.append(opt_future)
         
         # Wait for all optimizer steps
