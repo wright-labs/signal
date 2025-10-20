@@ -73,7 +73,7 @@ async def main():
         )
 
         # Optimizer step
-        opt_result = await session.optim_step.remote.aio()
+        await session.optim_step.remote.aio()
 
         iter_time = time.time() - iter_start
         iteration_times.append(iter_time)

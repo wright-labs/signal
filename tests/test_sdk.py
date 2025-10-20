@@ -74,7 +74,7 @@ def run_single_gpu_test(client: SignalClient):
             print(f"      Grad norm: {grad_norm}")
 
             # Optimizer step
-            opt_result = run.optim_step()
+            run.optim_step()
 
             step_elapsed = time.time() - step_start
             print(f"      Time: {step_elapsed:.1f}s")
@@ -192,7 +192,7 @@ def run_multi_gpu_test(client: SignalClient):
             print(f"      Grad norm: {grad_norm}")
 
             # Optimizer step
-            opt_result = run.optim_step()
+            run.optim_step()
 
             step_elapsed = time.time() - step_start
             print(f"      Time: {step_elapsed:.1f}s")

@@ -4,10 +4,15 @@ Core training API for fine-tuning language models on Modal.
 Billing and API key management are handled by the Frontier Backend.
 """
 
+import sys
+import os
+import logging
+import uuid
+from pathlib import Path
+from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -16,27 +21,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from typing import Optional, Dict, Any
-from contextlib import asynccontextmanager
-import sys
-import os
-import logging
-import uuid
-from pathlib import Path
+import modal
+
+load_dotenv()
 
 # Add current directory to path for modal_runtime imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from api.auth import AuthManager, get_client_ip
-from api.registry import RunRegistry
-from api.models import ModelRegistry
-from api.logging_config import security_logger
-
+from api.auth import AuthManager, get_client_ip  # noqa: E402
+from api.registry import RunRegistry  # noqa: E402
+from api.models import ModelRegistry  # noqa: E402
+from api.logging_config import security_logger  # noqa: E402
 # from api.openai_compat import router as openai_router
-from api.frontier_client import get_frontier_client
-from api.pricing import get_gpu_hourly_rate, calculate_run_cost
-from api.future_store import store_future, get_future, delete_future
-from api.schemas import (
+from api.frontier_client import get_frontier_client  # noqa: E402
+from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
+from api.future_store import store_future, get_future, delete_future  # noqa: E402
+from api.schemas import (  # noqa: E402
     RunConfig,
     RunResponse,
     ForwardBackwardRequest,
@@ -61,8 +61,6 @@ from api.schemas import (
     EmbeddingsRequest,
     EmbeddingsResponse,
 )
-
-import modal
 
 _training_session_cls_cache = {}
 
@@ -723,10 +721,9 @@ async def create_run(
                 detail=f"Model {config.base_model} not supported. Use /models to see available models.",
             )
 
-        # Get model config
-        model_config = model_registry.get_model(config.base_model)
-        framework = model_config["framework"]
-
+        # Get model config (verify model exists)
+        _ = model_registry.get_model(config.base_model)
+        
         # Use auto-allocation logic
         from api.gpu_allocator import (
             allocate_gpu_config,
@@ -774,8 +771,8 @@ async def create_run(
             )
 
         # Fetch user integrations from Frontier Backend
-        integrations = await frontier_client.get_integrations(user_id)
-
+        await frontier_client.get_integrations(user_id)
+        
         # Create run in registry
         run_id = run_registry.create_run(
             user_id=user_id,
@@ -789,7 +786,7 @@ async def create_run(
         try:
             # Initialize stateful container with GPU config
             session = get_training_session(run_id, gpu_config=gpu_config)
-            result = session.initialize.remote(
+            session.initialize.remote(
                 user_id=user_id,
                 run_id=run_id,
                 base_model=config.base_model,
@@ -862,9 +859,6 @@ async def forward_backward(
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
 
-        # Get current step
-        current_step = run["current_step"]
-
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
         logging.info(f"Forward-backward with GPU config: {gpu_config}")
@@ -927,9 +921,6 @@ async def forward_backward_async(
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
 
-        # Get current step
-        current_step = run["current_step"]
-
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
         logging.info(f"Forward-backward async with GPU config: {gpu_config}")
@@ -987,9 +978,6 @@ async def optim_step(
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
 
-        # Get current step
-        current_step = run["current_step"]
-
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
 
@@ -1046,9 +1034,6 @@ async def optim_step_async(
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
 
-        # Get current step
-        current_step = run["current_step"]
-
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
 
@@ -1099,9 +1084,6 @@ async def sample(
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
-
-        # Get current step
-        current_step = run["current_step"]
 
         # Use single GPU for inference regardless of training GPU count
         gpu_config = run["config"].get("gpu_config", "l40s:1")
@@ -1155,9 +1137,6 @@ async def sample_async(
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
-
-        # Get current step
-        current_step = run["current_step"]
 
         # Use single GPU for inference regardless of training GPU count
         gpu_config = run["config"].get("gpu_config", "l40s:1")
@@ -1330,9 +1309,6 @@ async def save_state(
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
 
-        # Get current step
-        current_step = run["current_step"]
-
         # Use single GPU for save operation
         gpu_config = run["config"].get("gpu_config", "l40s:1")
 
@@ -1355,7 +1331,7 @@ async def save_state(
 
             artifact_recorded = run_registry.record_artifact(
                 run_id=run_id,
-                step=current_step,
+                step=run["current_step"],
                 mode=request.mode,
                 s3_uri=result["s3_uri"],
                 manifest=result.get("manifest", {}),
@@ -1406,9 +1382,6 @@ async def save_state_async(
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
-
-        # Get current step
-        current_step = run["current_step"]
 
         # Use single GPU for save operation
         gpu_config = run["config"].get("gpu_config", "l40s:1")

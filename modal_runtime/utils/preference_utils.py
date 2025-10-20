@@ -203,9 +203,6 @@ def format_grpo_samples(
     # response_encoded["input_ids"] has shape [batch_size * max_responses, seq_len]
     # We want [batch_size, max_responses, seq_len]
     response_ids = response_encoded["input_ids"].view(batch_size, max_responses, -1)
-    response_attention = response_encoded["attention_mask"].view(
-        batch_size, max_responses, -1
-    )
 
     return {
         "prompt_ids": prompt_encoded["input_ids"],

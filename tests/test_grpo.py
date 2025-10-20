@@ -22,7 +22,7 @@ def test_create_grpo_trainer():
 
     # Create trainer - patch the TRL import
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[simple_reward],
@@ -51,7 +51,7 @@ def test_create_grpo_trainer_with_dapo():
         return [1.0] * len(completions)
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[reward_fn],
@@ -107,7 +107,7 @@ def test_grpo_trainer_with_lite_ppo():
         return [1.0] * len(completions)
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[reward_fn],
@@ -134,7 +134,7 @@ def test_grpo_trainer_with_vllm():
         return [1.0] * len(completions)
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[reward_fn],
@@ -170,7 +170,7 @@ def test_multiple_reward_functions():
         return [1.0 if "good" in c.lower() else 0.0 for c in completions]
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[length_reward, quality_reward],
@@ -196,7 +196,7 @@ def test_grpo_config_parameters():
         return [1.0] * len(completions)
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[reward_fn],
@@ -235,7 +235,7 @@ def test_dr_grpo_variant():
         return [1.0] * len(completions)
 
     with patch("trl.GRPOTrainer") as MockTrainer:
-        trainer = create_grpo_trainer(
+        _ = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
             reward_funcs=[reward_fn],

@@ -108,8 +108,8 @@ def tokenize_batch(
         ... }]
         >>> tokens = tokenize_batch(batch, tokenizer)
     """
-    # Get appropriate collator
-    collator = get_data_collator(
+    # Get appropriate collator (used internally by formatting functions)
+    _ = get_data_collator(
         tokenizer=tokenizer,
         loss_fn=loss_fn,
         max_seq_length=max_seq_length,

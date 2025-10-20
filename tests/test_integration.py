@@ -444,7 +444,7 @@ class TestErrorScenarios:
     ):
         """Test that users can't access other users' runs."""
         # Create run for user1
-        user1_key = api_key_manager.generate_key("user1", "Key")
+        _ = api_key_manager.generate_key("user1", "Key")
         run_id = create_test_run(run_registry, "user1")
 
         # Try to access as user2

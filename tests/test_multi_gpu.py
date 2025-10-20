@@ -83,7 +83,7 @@ async def test_single_gpu():
 
         # Optimizer step
         opt_start = time.time()
-        opt_result = await session.optim_step.remote.aio()
+        await session.optim_step.remote.aio()
         opt_time = time.time() - opt_start
 
         total_time = fb_time + opt_time

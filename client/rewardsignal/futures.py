@@ -84,7 +84,7 @@ class APIFuture:
             # Try to cancel via API
             asyncio.run(self.client._request("DELETE", f"/futures/{self.future_id}"))
             return True
-        except:
+        except Exception:
             return False
 
     def __repr__(self) -> str:

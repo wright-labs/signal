@@ -111,7 +111,7 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
             fb_result = run.forward_backward(TRAINING_DATA)
 
             # Optimizer step
-            opt_result = run.optim_step()
+            run.optim_step()
 
             iter_time = time.time() - iter_start
             iteration_times.append(iter_time)

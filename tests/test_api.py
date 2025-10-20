@@ -249,7 +249,7 @@ class TestGetRunStatus:
     ):
         """Test that users can't see other users' runs."""
         # Create run for user1
-        user1_key = api_key_manager.generate_key("user1", "Key")
+        _ = api_key_manager.generate_key("user1", "Key")
         run_id = create_test_run(run_registry, "user1")
 
         # Try to access as user2
@@ -364,7 +364,7 @@ class TestForwardBackward:
         self, test_client, api_key_manager, run_registry, sample_batch
     ):
         """Test forward-backward with unauthorized access."""
-        user1_key = api_key_manager.generate_key("user1", "Key")
+        _ = api_key_manager.generate_key("user1", "Key")
         run_id = create_test_run(run_registry, "user1")
 
         user2_key = api_key_manager.generate_key("user2", "Key")

@@ -127,10 +127,10 @@ class TestValidateGPUConfig:
 
     def test_valid_configs(self):
         """Test valid GPU configurations."""
-        assert validate_gpu_config("L40S:1") == True
-        assert validate_gpu_config("A100-80GB:4") == True
-        assert validate_gpu_config("H100:2") == True
-        assert validate_gpu_config("T4:1") == True
+        assert validate_gpu_config("L40S:1")
+        assert validate_gpu_config("A100-80GB:4")
+        assert validate_gpu_config("H100:2")
+        assert validate_gpu_config("T4:1")
 
     def test_invalid_format(self):
         """Test invalid format raises ValueError."""
