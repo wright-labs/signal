@@ -72,7 +72,6 @@ def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any
     return runs
 
 
-# TODO: for logging purposes, maybe don't delete? idk check this one as well
 def delete_run_directory(run_path: str) -> int:
     """Delete a run directory and return bytes freed."""
     run_dir = Path(run_path)
@@ -89,7 +88,6 @@ def delete_run_directory(run_path: str) -> int:
     return total_size
 
 
-# TODO: decide if retention days should vary, for now lets say no.
 @app.function(
     image=modal.Image.debian_slim().pip_install("requests"),
     volumes=VOLUME_CONFIG,
