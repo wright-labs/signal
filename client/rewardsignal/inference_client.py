@@ -123,7 +123,7 @@ class InferenceClient:
                 
                 return response.json()
                 
-            except requests.exceptions.Timeout as e:
+            except requests.exceptions.Timeout:
                 last_exception = SignalTimeoutError(
                     f"Request to {endpoint} timed out after {self.timeout}s"
                 )

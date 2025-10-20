@@ -96,7 +96,7 @@ async def main():
         # Submit multiple requests
         for i in range(3):
             batch = [{"text": f"Batch {i}"}]
-            future = await client.forward_backward_async(batch, "causal_lm")
+            future = await run.forward_backward_async(batch, loss_fn="causal_lm")
             group.add(future)
             print(f"✓ Added future {i+1} to group")
         
@@ -116,7 +116,7 @@ async def main():
         
         # Initialize with first batch
         batch = batches[0]
-        fb_future = await client.forward_backward_async(batch, "causal_lm")
+        fb_future = await run.forward_backward_async(batch, loss_fn="causal_lm")
         
         # Pipeline: submit next FB while waiting for prev optim
         for i in range(1, len(batches)):
@@ -125,16 +125,16 @@ async def main():
             print(f"Step {i}: FB complete, loss={fb_result['loss']:.4f}")
             
             # Submit next FB (overlapped with optim)
-            fb_future = await client.forward_backward_async(batches[i], "causal_lm")
+            fb_future = await run.forward_backward_async(batches[i], loss_fn="causal_lm")
             
             # Submit optim step
-            opt_future = await client.optim_step_async()
+            opt_future = await run.optim_step_async()
             opt_result = await opt_future
             print(f"Step {i}: Optim complete, step={opt_result['step']}")
         
         # Process last batch
         fb_result = await fb_future
-        opt_future = await client.optim_step_async()
+        opt_future = await run.optim_step_async()
         opt_result = await opt_future
         print(f"Step {len(batches)}: Complete, step={opt_result['step']}")
         
@@ -142,13 +142,11 @@ async def main():
         print(f"\nPipelined time: {total_time:.2f}s")
         print(f"Average per batch: {total_time / len(batches):.2f}s")
         
-        # Get metrics
-        metrics = client.get_metrics()
-        print(f"\n=== Final Metrics ===")
-        print(f"Total steps: {metrics['current_step']}")
-        print(f"Avg loss: {metrics['avg_loss']:.4f}")
-        print(f"Queue depth: {metrics['queue_depth']}")
-        print(f"Pending requests: {metrics['pending_requests']}")
+        # Get run status
+        status = await run.get_status()
+        print("\n=== Final Status ===")
+        print(f"Run status: {status['status']}")
+        print(f"Current step: {status['current_step']}")
     
     print("\n✓ Futures pipelining demo complete!")
 

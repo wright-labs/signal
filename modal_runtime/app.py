@@ -87,4 +87,3 @@ TRAINING_IMAGE = (
 # Inference image - use same as training for simplicity
 INFERENCE_IMAGE = TRAINING_IMAGE
 
-import modal_runtime.training_session  # Single class with Accelerate for multi-GPU
