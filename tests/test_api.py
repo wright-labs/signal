@@ -1,5 +1,4 @@
 """Tests for API endpoints."""
-import pytest
 from tests.conftest import create_test_run
 
 

@@ -45,13 +45,13 @@ async def main():
     print(f"  GPUs: {result.get('num_gpus', 1)}")
     
     if 'gpu_stats' in result:
-        print(f"\n  GPU Stats:")
+        print("\n  GPU Stats:")
         for gpu in result['gpu_stats']:
             print(f"    GPU {gpu['gpu_id']}: {gpu['name']}")
             print(f"      Memory: {gpu['memory_allocated_gb']:.2f} / {gpu['memory_total_gb']:.2f} GB")
     
     # Training loop
-    print(f"\n3. Running 5 training iterations...")
+    print("\n3. Running 5 training iterations...")
     print("-" * 80)
     
     iteration_times = []
@@ -89,12 +89,12 @@ async def main():
     avg_time = sum(iteration_times) / len(iteration_times)
     loss_improvement = losses[0] - losses[-1]
     
-    print(f"\n✓ Training complete!")
+    print("\n✓ Training complete!")
     print(f"  Average iteration: {avg_time:.3f}s")
     print(f"  Loss: {losses[0]:.4f} → {losses[-1]:.4f} (Δ {loss_improvement:.4f})")
     
     # Generate samples
-    print(f"\n4. Generating samples...")
+    print("\n4. Generating samples...")
     sample_start = time.time()
     
     samples = await session.sample.remote.aio(
@@ -113,7 +113,7 @@ async def main():
     
     # Final state
     state = await session.get_state.remote.aio()
-    print(f"\n5. Final state:")
+    print("\n5. Final state:")
     print(f"  Step: {state['current_step']}")
     print(f"  Status: {state['status']}")
     print(f"  GPUs: {state.get('num_gpus', 1)}")
@@ -129,7 +129,7 @@ async def main():
     print("✅ MULTI-GPU TEST PASSED!")
     print("=" * 80)
     print(f"Model: Qwen 2.5 1.5B ({result['trainable_params']:,} LoRA params)")
-    print(f"GPUs: 2x L40S (DataParallel)")
+    print("GPUs: 2x L40S (DataParallel)")
     print(f"Performance: {avg_time:.3f}s per iteration")
     print(f"Loss improved: {losses[0]:.4f} → {losses[-1]:.4f}")
     print("=" * 80)

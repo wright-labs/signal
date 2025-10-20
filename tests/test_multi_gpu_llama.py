@@ -87,7 +87,7 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
         
         # Get session state to see GPU info
         state = run.get_state()
-        print(f"\n2. Session state:")
+        print("\n2. Session state:")
         print(f"  Status: {state.get('status')}")
         print(f"  GPUs: {state.get('num_gpus', 1)}")
         print(f"  Multi-GPU: {state.get('is_multi_gpu', False)}")
@@ -98,7 +98,7 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
             print(f"  Allocated memory: {gpu_summary.get('total_allocated_gb', 0):.1f} GB")
         
         # Training loop
-        print(f"\n3. Running 5 training iterations...")
+        print("\n3. Running 5 training iterations...")
         iteration_times = []
         losses = []
         
@@ -126,12 +126,12 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
         avg_time = sum(iteration_times) / len(iteration_times)
         loss_improvement = losses[0] - losses[-1]
         
-        print(f"\n✓ Training complete")
+        print("\n✓ Training complete")
         print(f"  Average iteration time: {avg_time:.3f}s")
         print(f"  Loss: {losses[0]:.4f} → {losses[-1]:.4f} (Δ {loss_improvement:.4f})")
         
         # Generate samples
-        print(f"\n4. Generating samples...")
+        print("\n4. Generating samples...")
         sample_start = time.time()
         
         samples = run.sample(
@@ -148,7 +148,7 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
         # Final state with GPU stats
         final_state = run.get_state()
         
-        print(f"\n5. Final state:")
+        print("\n5. Final state:")
         print(f"  Step: {final_state.get('current_step', 0)}")
         print(f"  Status: {final_state.get('status')}")
         
@@ -238,7 +238,7 @@ async def main():
                   f"Loss Δ: {r['loss_improvement']:.4f}{speedup}")
     
     # Cost analysis
-    print(f"\n" + "-" * 80)
+    print("\n" + "-" * 80)
     print("Cost Analysis (estimated for 1000 steps):")
     print("-" * 80)
     

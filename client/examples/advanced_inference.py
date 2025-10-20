@@ -29,7 +29,7 @@ def main():
         temperature=0.7,
     )
     
-    print(f"Prompt: What is machine learning?")
+    print("Prompt: What is machine learning?")
     print(f"Output: {outputs[0]}\n")
     
     # Example 2: Batched inference
@@ -89,7 +89,7 @@ def main():
     
     # Check cache stats
     stats = inference.get_cache_stats()
-    print(f"\nCache stats:")
+    print("\nCache stats:")
     print(f"  Enabled: {stats['cache_enabled']}")
     print(f"  Size: {stats['cache_size']}")
     
@@ -112,9 +112,9 @@ def main():
     output_late = inference_late.sample([prompt], max_tokens=100)
     
     print(f"Prompt: {prompt}\n")
-    print(f"Early checkpoint (step 10):")
+    print("Early checkpoint (step 10):")
     print(f"{output_early[0]}\n")
-    print(f"Late checkpoint (step 1000):")
+    print("Late checkpoint (step 1000):")
     print(f"{output_late[0]}\n")
     
     # Example 5: Using context manager

@@ -41,13 +41,13 @@ def test_signal_api_e2e():
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
         if response.status_code == 200:
-            print(f"   ✓ API is healthy")
+            print("   ✓ API is healthy")
         else:
             print(f"   ❌ API health check failed: {response.status_code}")
             return False
     except requests.exceptions.ConnectionError:
         print(f"   ❌ Cannot connect to API at {API_BASE_URL}")
-        print(f"   Make sure the API server is running with: uvicorn api.main:app")
+        print("   Make sure the API server is running with: uvicorn api.main:app")
         return False
     except Exception as e:
         print(f"   ❌ Health check failed: {e}")
@@ -93,7 +93,7 @@ def test_signal_api_e2e():
             print(f"   ✓ Created run: {run_id}")
             print(f"   Status: {run_data['status']}")
         elif response.status_code == 401:
-            print(f"   ❌ Authentication failed. Set TEST_API_KEY environment variable.")
+            print("   ❌ Authentication failed. Set TEST_API_KEY environment variable.")
             return False
         else:
             print(f"   ❌ Failed to create run: {response.status_code}")
@@ -129,7 +129,7 @@ def test_signal_api_e2e():
         
         if response.status_code == 200:
             result = response.json()
-            print(f"   ✓ Forward-backward successful")
+            print("   ✓ Forward-backward successful")
             print(f"   Loss: {result['loss']:.4f}")
             print(f"   Step: {result['step']}")
         else:
@@ -152,7 +152,7 @@ def test_signal_api_e2e():
         
         if response.status_code == 200:
             result = response.json()
-            print(f"   ✓ Optimizer step successful")
+            print("   ✓ Optimizer step successful")
             print(f"   Step: {result['step']}")
             print(f"   Learning rate: {result['learning_rate']}")
         else:
@@ -179,7 +179,7 @@ def test_signal_api_e2e():
         
         if response.status_code == 200:
             result = response.json()
-            print(f"   ✓ Sampling successful")
+            print("   ✓ Sampling successful")
             print(f"   Output: {result['outputs'][0][:100]}...")
         else:
             print(f"   ⚠ Sampling failed (non-critical): {response.status_code}")
@@ -201,7 +201,7 @@ def test_signal_api_e2e():
         
         if response.status_code == 200:
             result = response.json()
-            print(f"   ✓ Save state successful")
+            print("   ✓ Save state successful")
             print(f"   Checkpoint: {result['checkpoint_path']}")
         else:
             print(f"   ❌ Save state failed: {response.status_code}")
@@ -248,7 +248,7 @@ def test_signal_api_e2e():
     print("✅ All API tests passed! Signal is working correctly.")
     print("="*80 + "\n")
     print(f"Run ID: {run_id}")
-    print(f"You can view this run in the Supabase database or in the frontend at /signal")
+    print("You can view this run in the Supabase database or in the frontend at /signal")
     
     return True
 

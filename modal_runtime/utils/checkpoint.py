@@ -37,7 +37,7 @@ def save_merged_model(
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     
-    print(f"Merging LoRA weights with base model...")
+    print("Merging LoRA weights with base model...")
     
     # Merge LoRA weights into base model (PEFT handles this)
     merged_model = model.merge_and_unload()

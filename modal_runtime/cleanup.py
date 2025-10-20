@@ -99,7 +99,7 @@ def cleanup_old_runs(
     Runs daily to clean up completed training runs older than retention_days.
     Artifacts remain in S3 for long-term storage."""
     print("=" * 80)
-    print(f"Starting Modal Volume cleanup job")
+    print("Starting Modal Volume cleanup job")
     print(f"Retention policy: {retention_days} days")
     print(f"Dry run: {dry_run}")
     print("=" * 80)
@@ -237,11 +237,10 @@ def cleanup_stale_runs(
     
     Prevents stuck runs when clients crash or lose connection.
     Uses the database's updated_at column which auto-updates on any API activity."""
-    import requests
     from supabase import create_client
     
     print("=" * 80)
-    print(f"Starting stale run cleanup job")
+    print("Starting stale run cleanup job")
     print(f"Stale threshold: {stale_minutes} minutes")
     print(f"Dry run: {dry_run}")
     print("=" * 80)

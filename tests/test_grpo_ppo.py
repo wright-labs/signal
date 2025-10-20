@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from modal_runtime.loss_functions import grpo_loss, ppo_loss, get_loss_function
+from modal_runtime.loss_functions import grpo_loss, ppo_loss
 
 
 class MockModel:

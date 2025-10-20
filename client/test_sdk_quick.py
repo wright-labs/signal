@@ -114,7 +114,7 @@ def test_advanced_training_api():
         
         # Check metrics
         metrics = training.get_metrics()
-        print(f"\n✓ Training metrics:")
+        print("\n✓ Training metrics:")
         print(f"  - Current step: {metrics['current_step']}")
         print(f"  - Average loss: {metrics['avg_loss']:.4f}")
         print(f"  - Loss history: {len(metrics['loss_history'])} steps")
@@ -203,7 +203,7 @@ def test_advanced_inference_api():
         mock_response.json.return_value = {"outputs": ["Late checkpoint response"]}
         output_late = inference_late.sample(["Test"], max_tokens=50)
         
-        print(f"✓ Checkpoint comparison:")
+        print("✓ Checkpoint comparison:")
         print(f"  - Step 10: {output_early[0][:40]}...")
         print(f"  - Step 1000: {output_late[0][:40]}...")
         

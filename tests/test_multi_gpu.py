@@ -9,7 +9,6 @@ This script tests:
 import asyncio
 import time
 import modal
-from typing import Dict, List
 import statistics
 
 # Configuration
@@ -97,7 +96,7 @@ async def test_single_gpu():
     avg_time = statistics.mean(times)
     avg_loss = statistics.mean(losses)
     
-    print(f"\n✓ Completed 10 iterations")
+    print("\n✓ Completed 10 iterations")
     print(f"   Average iteration time: {avg_time:.3f}s")
     print(f"   Average loss: {avg_loss:.4f}")
     print(f"   Loss improvement: {losses[0]:.4f} → {losses[-1]:.4f}")
@@ -134,12 +133,12 @@ async def test_multi_gpu(num_gpus: int = 2):
     
     # Note: This requires deploying TrainingSession with multi-GPU support
     print(f"\n⚠️  Multi-GPU requires deploying with gpu='l40s:{num_gpus}'")
-    print(f"    Current deployment uses single GPU only")
-    print(f"\nTo enable multi-GPU:")
-    print(f"  1. Update modal_runtime/training_session.py:")
+    print("    Current deployment uses single GPU only")
+    print("\nTo enable multi-GPU:")
+    print("  1. Update modal_runtime/training_session.py:")
     print(f"     @app.cls(gpu='l40s:{num_gpus}', ...)")
-    print(f"  2. Add DataParallel wrapping in model_loader.py")
-    print(f"  3. Redeploy: modal deploy modal_runtime/training_session.py")
+    print("  2. Add DataParallel wrapping in model_loader.py")
+    print("  3. Redeploy: modal deploy modal_runtime/training_session.py")
     
     return None
 
@@ -196,7 +195,7 @@ async def main():
     print("=" * 80)
     
     if single_gpu_results:
-        print(f"\n✓ Single GPU (L40S):")
+        print("\n✓ Single GPU (L40S):")
         print(f"   Init time: {single_gpu_results['init_time']:.2f}s")
         print(f"   Avg iteration: {single_gpu_results['avg_iteration_time']:.3f}s")
         print(f"   Sample time: {single_gpu_results['sample_time']:.2f}s")
@@ -210,10 +209,10 @@ async def main():
         print(f"   Speedup: {speedup:.2f}x")
         print(f"   Efficiency: {(speedup / multi_gpu_results['gpu_count']) * 100:.1f}%")
     else:
-        print(f"\n⚠️  Multi-GPU test skipped (requires deployment changes)")
-        print(f"\nTo enable multi-GPU support:")
-        print(f"  1. See instructions above")
-        print(f"  2. Re-run this test after deployment")
+        print("\n⚠️  Multi-GPU test skipped (requires deployment changes)")
+        print("\nTo enable multi-GPU support:")
+        print("  1. See instructions above")
+        print("  2. Re-run this test after deployment")
     
     print("\n" + "=" * 80)
 

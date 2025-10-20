@@ -31,7 +31,7 @@ from api.models import ModelRegistry
 from api.logging_config import security_logger
 # from api.openai_compat import router as openai_router
 from api.frontier_client import get_frontier_client
-from api.pricing import calculate_estimated_cost, calculate_actual_cost, get_gpu_hourly_rate, calculate_run_cost
+from api.pricing import get_gpu_hourly_rate, calculate_run_cost
 from api.future_store import store_future, get_future, delete_future
 from api.schemas import (
     RunConfig,
@@ -55,7 +55,6 @@ from api.schemas import (
     ApplyChatTemplateRequest,
     ApplyChatTemplateResponse,
     StreamSampleRequest,
-    StreamChunk,
     EmbeddingsRequest,
     EmbeddingsResponse,
 )

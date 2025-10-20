@@ -48,9 +48,9 @@ def main():
         # Conditional optimizer step (e.g., gradient clipping)
         if result['grad_norm'] < 10.0:
             training.optim_step()
-            print(f"✓ Optimizer step applied")
+            print("✓ Optimizer step applied")
         else:
-            print(f"✗ Skipping step: gradient norm too high")
+            print("✗ Skipping step: gradient norm too high")
     
     # Example 2: Using convenience method train_batch
     print("\n=== Example 2: Convenience method train_batch ===")
@@ -70,7 +70,7 @@ def main():
         progress=True,  # Shows tqdm progress bar
     )
     
-    print(f"\nEpoch complete:")
+    print("\nEpoch complete:")
     print(f"  Batches processed: {result['num_batches']}")
     print(f"  Average loss: {result['avg_loss']:.4f}")
     print(f"  Average grad norm: {result['avg_grad_norm']:.4f}")

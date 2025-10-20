@@ -1,7 +1,6 @@
 """OpenAI-compatible API endpoints for Verifiers integration."""
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any, Optional, Literal, Union
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import time
 import uuid

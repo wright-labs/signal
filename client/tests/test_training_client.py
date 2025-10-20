@@ -1,7 +1,6 @@
 """Tests for TrainingClient specialized client."""
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 from rewardsignal import TrainingClient
 
 

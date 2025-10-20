@@ -1,5 +1,4 @@
 """Tests for GRPO trainer integration."""
-import pytest
 from unittest.mock import MagicMock, patch
 from datasets import Dataset
 

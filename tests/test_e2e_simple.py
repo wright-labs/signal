@@ -3,9 +3,7 @@
 This test creates a tiny training run with a very small model to verify
 that all the core primitives work correctly.
 """
-import os
 import sys
-import time
 from pathlib import Path
 
 # Add parent directory to path
@@ -97,7 +95,7 @@ def test_modal_primitives_e2e():
             gradient_checkpointing=True,
             integrations={},  # No integrations for test
         )
-        print(f"   ✓ Modal create_run successful")
+        print("   ✓ Modal create_run successful")
         print(f"   Status: {result['status']}")
         
         # Update registry
@@ -125,7 +123,7 @@ def test_modal_primitives_e2e():
             loss_fn="causal_lm",
             loss_kwargs={},
         )
-        print(f"   ✓ Forward-backward successful")
+        print("   ✓ Forward-backward successful")
         print(f"   Loss: {result['loss']:.4f}")
         print(f"   Grad norm: {result.get('grad_norm', 'N/A')}")
         
@@ -148,7 +146,7 @@ def test_modal_primitives_e2e():
             step=0,
             learning_rate=3e-4,
         )
-        print(f"   ✓ Optimizer step successful")
+        print("   ✓ Optimizer step successful")
         print(f"   Step: {result['step']}")
         print(f"   Learning rate: {result['learning_rate']}")
         
@@ -172,7 +170,7 @@ def test_modal_primitives_e2e():
             top_p=0.9,
             return_logprobs=False,
         )
-        print(f"   ✓ Sampling successful")
+        print("   ✓ Sampling successful")
         print(f"   Output: {result['outputs'][0][:100]}...")
     except Exception as e:
         print(f"   ❌ Sampling failed: {e}")
@@ -189,7 +187,7 @@ def test_modal_primitives_e2e():
             push_to_hub=False,
             hub_model_id=None,
         )
-        print(f"   ✓ Save state successful")
+        print("   ✓ Save state successful")
         print(f"   Checkpoint: {result['checkpoint_path']}")
         print(f"   Artifact URI: {result['artifact_uri']}")
     except Exception as e:
@@ -213,7 +211,7 @@ def test_modal_primitives_e2e():
     print(f"   ✓ Run marked as completed: {run_id}")
     
     # Don't delete so we can inspect in Supabase
-    print(f"   Run preserved in database for inspection")
+    print("   Run preserved in database for inspection")
     
     print("\n" + "="*80)
     print("✅ All tests passed! Signal primitives are working correctly.")

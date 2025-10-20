@@ -70,7 +70,7 @@ def load_model_and_tokenizer(
     if quantization_config is not None:
         print(f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)")
     else:
-        print(f"  - Mode: LoRA (full precision)")
+        print("  - Mode: LoRA (full precision)")
     print(f"  - Precision: {'bfloat16' if bf16 else 'float16'}")
     print(f"  - Gradient checkpointing: {gradient_checkpointing}")
     
@@ -96,7 +96,7 @@ def load_model_and_tokenizer(
             print("Enabling gradient checkpointing...")
             model.gradient_checkpointing_enable()
     
-    print(f"✓ Model loaded successfully")
+    print("✓ Model loaded successfully")
     return model, tokenizer
 
 
@@ -185,6 +185,6 @@ def load_lora_checkpoint(
         str(checkpoint_path),
         is_trainable=True,
     )
-    print(f"✓ Loaded PEFT checkpoint")
+    print("✓ Loaded PEFT checkpoint")
     
     return model

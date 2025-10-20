@@ -1,7 +1,7 @@
 """Security tests for the Signal API."""
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from api.main import app
 from api.auth import HybridAuthManager
 

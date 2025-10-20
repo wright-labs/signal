@@ -49,7 +49,7 @@ def test_full_training_loop():
             if opt_result.get('checkpoint_saved'):
                 print(f"   ✓ Auto-checkpoint saved at step {opt_result['step']}")
     
-    print(f"   ✓ Completed 20 training steps")
+    print("   ✓ Completed 20 training steps")
     print(f"   ✓ Loss decreased: {losses[0]:.4f} → {losses[-1]:.4f}")
     
     # 3. Sample from model
@@ -78,7 +78,7 @@ def test_full_training_loop():
     assert state["current_step"] == 20, f"Expected step 20, got {state['current_step']}"
     print(f"   ✓ Final step: {state['current_step']}")
     print(f"   ✓ Last checkpoint: {state['last_checkpoint_step']}")
-    print(f"   ✓ Session active")
+    print("   ✓ Session active")
     
     # 6. Continue training (test warm state)
     print("\n6. Continue training (warm state)...")
@@ -92,7 +92,7 @@ def test_full_training_loop():
     print(f"   ✓ Step 21: loss={fb_result['loss']:.4f}")
     
     if warm_time < 10:
-        print(f"   ✅ SUCCESS: Warm iteration is fast (<10s)!")
+        print("   ✅ SUCCESS: Warm iteration is fast (<10s)!")
     else:
         print(f"   ⚠️  WARNING: Warm iteration took {warm_time:.2f}s (expected <10s)")
     
@@ -100,11 +100,11 @@ def test_full_training_loop():
     print("✅ FULL TRAINING LOOP TEST PASSED!")
     print("=" * 80)
     print("\nSummary:")
-    print(f"  - Completed 21 training steps")
+    print("  - Completed 21 training steps")
     print(f"  - Loss: {losses[0]:.4f} → {fb_result['loss']:.4f}")
-    print(f"  - Auto-checkpoint: working (saved at steps 10, 20)")
-    print(f"  - Sampling: working (generated text)")
-    print(f"  - State persistence: working (warm calls are fast)")
+    print("  - Auto-checkpoint: working (saved at steps 10, 20)")
+    print("  - Sampling: working (generated text)")
+    print("  - State persistence: working (warm calls are fast)")
     print(f"  - Warm iteration time: {warm_time:.2f}s")
 
 

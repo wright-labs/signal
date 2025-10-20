@@ -2,7 +2,6 @@
 import torch
 import modal
 from typing import Dict, Any, List, Optional
-from pathlib import Path
 import time
 import threading
 import traceback
@@ -27,11 +26,9 @@ from modal_runtime.utils import (
     tokenize_batch,
     get_run_paths,
     save_run_config,
-    load_run_config,
     find_latest_checkpoint,
 )
 from modal_runtime.gpu_monitor import (
-    get_gpu_stats,
     get_gpu_summary,
 )
 
@@ -322,7 +319,7 @@ class TrainingSession:
             print("\n" + "=" * 80)
             print("✓ INITIALIZATION COMPLETE")
             
-            print(f"Model loaded and ready in GPU memory")
+            print("Model loaded and ready in GPU memory")
             print(f"Total parameters: {total_params:,}")
             print(f"Trainable parameters: {trainable_params:,}")
             print(f"Current step: {self.current_step}")
@@ -369,7 +366,7 @@ class TrainingSession:
                 )
             
             print(f"\n{'=' * 80}")
-            print(f"FORWARD-BACKWARD PASS")
+            print("FORWARD-BACKWARD PASS")
             print(f"{'=' * 80}")
             print(f"Step: {self.current_step}")
             print(f"Batch size: {len(batch_data)}")
@@ -432,7 +429,7 @@ class TrainingSession:
             }
             
             print(f"\n{'=' * 80}")
-            print(f"✓ FORWARD-BACKWARD COMPLETE")
+            print("✓ FORWARD-BACKWARD COMPLETE")
             print(f"Loss: {metrics['loss']:.4f} | Grad Norm: {metrics['grad_norm']:.4f}")
             print(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
             print(f"{'=' * 80}")
@@ -473,7 +470,7 @@ class TrainingSession:
                 )
             
             print(f"\n{'=' * 80}")
-            print(f"OPTIMIZER STEP")
+            print("OPTIMIZER STEP")
             print(f"{'=' * 80}")
             print(f"Current step: {self.current_step}")
             
@@ -512,7 +509,7 @@ class TrainingSession:
             current_lr = self.optimizer.param_groups[0]['lr']
             
             print(f"\n{'=' * 80}")
-            print(f"✓ OPTIMIZER STEP COMPLETE")
+            print("✓ OPTIMIZER STEP COMPLETE")
             print(f"New step: {self.current_step}")
             print(f"Learning rate: {current_lr}")
             print(f"{'=' * 80}")
@@ -555,7 +552,7 @@ class TrainingSession:
                 )
             
             print(f"\n{'=' * 80}")
-            print(f"GENERATING SAMPLES")
+            print("GENERATING SAMPLES")
             print(f"{'=' * 80}")
             print(f"Step: {self.current_step}")
             print(f"Prompts: {len(prompts)}")
@@ -662,7 +659,7 @@ class TrainingSession:
                 )
             
             print(f"\n{'=' * 80}")
-            print(f"SAVING STATE")
+            print("SAVING STATE")
             print(f"{'=' * 80}")
             print(f"Step: {self.current_step}")
             print(f"Mode: {mode}")
@@ -686,7 +683,7 @@ class TrainingSession:
                 from modal_runtime.s3_client import upload_directory, generate_signed_url
                 from datetime import datetime, timezone, timedelta
                 
-                print(f"\nUploading checkpoint to S3/R2...")
+                print("\nUploading checkpoint to S3/R2...")
                 upload_result = upload_directory(
                     local_path=save_path,
                     s3_prefix=f"tenants/{self.user_id}/runs/{self.run_id}/checkpoints/{tag}/",
@@ -753,7 +750,7 @@ class TrainingSession:
             data_volume.commit()
             
             print(f"\n{'=' * 80}")
-            print(f"✓ STATE SAVED")
+            print("✓ STATE SAVED")
             print(f"{'=' * 80}")
             
             return result
@@ -1056,7 +1053,7 @@ class TrainingSession:
             steps_since_checkpoint = self.current_step - self.last_checkpoint_step
             if steps_since_checkpoint >= self.auto_checkpoint_interval:
                 try:
-                    print(f"\n[Background] Auto-checkpoint triggered")
+                    print("\n[Background] Auto-checkpoint triggered")
                     self._save_checkpoint_internal()
                     data_volume.commit()
                 except Exception as e:

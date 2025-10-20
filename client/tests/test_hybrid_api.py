@@ -1,7 +1,6 @@
 """Integration tests for hybrid client architecture."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from rewardsignal import SignalClient, TrainingClient, InferenceClient
 
 

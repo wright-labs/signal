@@ -10,7 +10,6 @@ from .schemas import (
     RunMetrics,
     ForwardBackwardResponse,
     OptimStepResponse,
-    SampleResponse,
     SaveStateResponse,
     TokenizeResponse,
     DetokenizeResponse,

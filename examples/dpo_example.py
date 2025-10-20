@@ -147,7 +147,7 @@ def main():
     
     # Get final run status
     status = client.training.get_status(run_id=run.run_id)
-    print(f"\n✅ Training complete!")
+    print("\n✅ Training complete!")
     print(f"  Total steps: {status.current_step}")
     print(f"  Cost: ${status.cost_so_far:.4f}")
     

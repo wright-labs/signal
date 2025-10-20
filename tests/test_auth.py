@@ -1,6 +1,4 @@
 """Tests for authentication and API key management."""
-import pytest
-from api.auth import APIKeyManager
 
 
 class TestAPIKeyGeneration:

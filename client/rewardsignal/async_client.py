@@ -1,7 +1,7 @@
 """Asynchronous Python client SDK for Signal API."""
 
 import httpx
-from typing import List, Dict, Any, Optional, Literal, Union
+from typing import List, Dict, Any, Optional, Literal
 
 from .schemas import (
     RunConfig,

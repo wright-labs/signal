@@ -1,6 +1,6 @@
 """Tokenization utilities using TRL data collators."""
 import torch
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 def get_data_collator(

@@ -1,6 +1,5 @@
 """Tests for run registry."""
 import pytest
-from api.registry import RunRegistry
 
 
 class TestRunCreation:

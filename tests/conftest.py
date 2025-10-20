@@ -1,9 +1,8 @@
 """Test fixtures and configuration for Supabase-backed Signal API."""
-import json
 import tempfile
 from pathlib import Path
 from typing import Dict, Any
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient

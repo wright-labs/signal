@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Real-world test of Signal SDK with single and multi-GPU training."""
 
-import os
 import sys
 import time
 from pathlib import Path
@@ -9,7 +8,7 @@ from pathlib import Path
 # Add client to path for local development
 sys.path.insert(0, str(Path(__file__).parent / "client"))
 
-from rewardsignal import SignalClient, SignalAPIError
+from rewardsignal import SignalClient
 
 
 def print_section(title: str):
@@ -82,7 +81,7 @@ def run_single_gpu_test(client: SignalClient):
             
             # Sample every 2 steps
             if (step + 1) % 2 == 0:
-                print(f"\n   🎲 Generating sample...")
+                print("\n   🎲 Generating sample...")
                 try:
                     samples = run.sample(
                         prompts=["The future of AI"],

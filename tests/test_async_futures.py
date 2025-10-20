@@ -1,7 +1,6 @@
 """Tests for async execution with futures."""
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio

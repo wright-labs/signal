@@ -102,7 +102,7 @@ async def main():
     print("SUMMARY")
     print("=" * 80)
     print(f"✓ Initialization: {init_time:.2f}s (cold start)")
-    print(f"✓ Average iteration: ~0.5-1s (warm, model stays loaded!)")
+    print("✓ Average iteration: ~0.5-1s (warm, model stays loaded!)")
     print(f"✓ Sample generation: {sample_time:.2f}s")
     print(f"✓ Current step: {final_state['current_step']}")
     print(f"✓ Status: {final_state['status']}")
