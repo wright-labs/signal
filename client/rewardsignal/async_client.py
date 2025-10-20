@@ -435,9 +435,11 @@ class AsyncSignalClient:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
-        return_future: bool = False,
-    ) -> Union[Dict[str, Any], APIFuture]:
-        """Perform forward-backward pass.
+    ) -> Dict[str, Any]:
+        """Perform forward-backward pass (blocking).
+        
+        Waits for completion and returns results immediately.
+        For async execution, use forward_backward_async().
         
         Args:
             run_id: Run identifier
@@ -445,10 +447,9 @@ class AsyncSignalClient:
             accumulate: Whether to accumulate gradients
             loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
             loss_kwargs: Additional arguments for the loss function
-            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with loss and gradient stats, or APIFuture if return_future=True
+            Response with loss and gradient stats
         """
         if loss_kwargs is None:
             loss_kwargs = {}
@@ -460,51 +461,92 @@ class AsyncSignalClient:
             "loss_kwargs": loss_kwargs,
         }
         
-        # Add return_future as query param
-        endpoint = f"/runs/{run_id}/forward_backward"
-        if return_future:
-            endpoint += "?return_future=true"
-        
-        response = await self._request("POST", endpoint, json=payload)
-        
-        if return_future and "future_id" in response:
-            # Return APIFuture for polling
-            return APIFuture(client=self, future_id=response["future_id"])
-        
+        response = await self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
         return response
+    
+    async def forward_backward_async(
+        self,
+        run_id: str,
+        batch: List[Dict[str, Any]],
+        accumulate: bool = False,
+        loss_fn: str = "causal_lm",
+        loss_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> APIFuture:
+        """Perform forward-backward pass (async).
+        
+        Returns immediately with APIFuture for polling.
+        Use await on the returned future to get results.
+        
+        Args:
+            run_id: Run identifier
+            batch: List of training examples
+            accumulate: Whether to accumulate gradients
+            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
+            loss_kwargs: Additional arguments for the loss function
+            
+        Returns:
+            APIFuture that can be awaited for results
+        """
+        if loss_kwargs is None:
+            loss_kwargs = {}
+            
+        payload = {
+            "batch_data": batch,
+            "accumulate": accumulate,
+            "loss_fn": loss_fn,
+            "loss_kwargs": loss_kwargs,
+        }
+        
+        response = await self._request("POST", f"/runs/{run_id}/forward_backward_async", json=payload)
+        return APIFuture(client=self, future_id=response["future_id"])
     
     async def optim_step(
         self,
         run_id: str,
         learning_rate: Optional[float] = None,
-        return_future: bool = False,
-    ) -> Union[Dict[str, Any], APIFuture]:
-        """Apply optimizer step.
+    ) -> Dict[str, Any]:
+        """Apply optimizer step (blocking).
+        
+        Waits for completion and returns results immediately.
+        For async execution, use optim_step_async().
         
         Args:
             run_id: Run identifier
             learning_rate: Optional learning rate override
-            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with step metrics, or APIFuture if return_future=True
+            Response with step metrics
         """
         payload = {
             "learning_rate": learning_rate,
         }
         
-        # Add return_future as query param
-        endpoint = f"/runs/{run_id}/optim_step"
-        if return_future:
-            endpoint += "?return_future=true"
-        
-        response = await self._request("POST", endpoint, json=payload)
-        
-        if return_future and "future_id" in response:
-            # Return APIFuture for polling
-            return APIFuture(client=self, future_id=response["future_id"])
-        
+        response = await self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
         return response
+    
+    async def optim_step_async(
+        self,
+        run_id: str,
+        learning_rate: Optional[float] = None,
+    ) -> APIFuture:
+        """Apply optimizer step (async).
+        
+        Returns immediately with APIFuture for polling.
+        Use await on the returned future to get results.
+        
+        Args:
+            run_id: Run identifier
+            learning_rate: Optional learning rate override
+            
+        Returns:
+            APIFuture that can be awaited for results
+        """
+        payload = {
+            "learning_rate": learning_rate,
+        }
+        
+        response = await self._request("POST", f"/runs/{run_id}/optim_step_async", json=payload)
+        return APIFuture(client=self, future_id=response["future_id"])
     
     async def sample(
         self,
