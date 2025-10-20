@@ -4,6 +4,13 @@ import requests
 import time
 from typing import List, Dict, Any, Optional
 
+from .schemas import (
+    TokenizeResponse,
+    DetokenizeResponse,
+    TokenizerInfoResponse,
+    ModelInfoResponse,
+    ApplyChatTemplateResponse,
+)
 from .exceptions import (
     SignalAPIError,
     ConnectionError as SignalConnectionError,
@@ -25,18 +32,7 @@ class InferenceClient:
         batch_size: int = 1,
         session: Optional[requests.Session] = None,
     ):
-        """Initialize inference client.
-        
-        Args:
-            run_id: Run identifier
-            api_key: API key for authentication
-            base_url: Base URL of the API server
-            step: Checkpoint step to use (latest if None)
-            timeout: Request timeout in seconds (default: 30)
-            max_retries: Number of retries for failed requests (default: 5)
-            batch_size: Batch size for inference (default: 1)
-            session: Optional shared session (for connection pooling)
-        """
+        """Initialize inference client."""
         self.run_id = run_id
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -93,19 +89,7 @@ class InferenceClient:
         endpoint: str,
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """Make a request with immediate retry.
-        
-        Args:
-            method: HTTP method
-            endpoint: API endpoint
-            json: Optional JSON payload
-            
-        Returns:
-            Response data
-            
-        Raises:
-            SignalAPIError: If request fails after retries
-        """
+        """Make a request with immediate retry."""
         url = f"{self.base_url}{endpoint}"
         last_exception = None
         
@@ -150,19 +134,7 @@ class InferenceClient:
         return_logprobs: bool = False,
         step: Optional[int] = None,
     ) -> List[str]:
-        """Generate text from prompts.
-        
-        Args:
-            prompts: List of prompts to generate from
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            return_logprobs: Whether to return log probabilities
-            step: Checkpoint step to use (overrides instance step)
-            
-        Returns:
-            List of generated texts
-        """
+        """Generate text from prompts."""
         # Check cache if enabled
         if self._cache_enabled and len(prompts) == 1:
             cache_key = f"{prompts[0]}:{max_tokens}:{temperature}:{top_p}:{step}"
@@ -206,20 +178,7 @@ class InferenceClient:
         top_p: float = 0.9,
         step: Optional[int] = None,
     ) -> List[str]:
-        """Generate text from prompts in batches.
-        
-        This automatically batches prompts based on self.batch_size.
-        
-        Args:
-            prompts: List of prompts to generate from
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            step: Checkpoint step to use (overrides instance step)
-            
-        Returns:
-            List of generated texts (same order as prompts)
-        """
+        """Generate text from prompts in batches."""
         all_outputs = []
         
         # Process in batches
@@ -244,18 +203,7 @@ class InferenceClient:
         top_p: float = 0.9,
         step: Optional[int] = None,
     ):
-        """Stream tokens as they're generated using Server-Sent Events.
-        
-        Args:
-            prompt: Single prompt to generate from
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            step: Checkpoint step to use (overrides instance step)
-            
-        Yields:
-            Dict with token, token_id, logprob, and is_finished fields
-        """
+        """Stream tokens as they're generated using Server-Sent Events."""
         payload = {
             "prompt": prompt,
             "max_tokens": max_tokens,
@@ -311,17 +259,7 @@ class InferenceClient:
         layer: int = -1,
         pooling: str = "mean",
     ) -> List[List[float]]:
-        """Get embeddings for texts.
-        
-        Args:
-            texts: List of texts to embed
-            step: Checkpoint step to use (overrides instance step)
-            layer: Layer to extract embeddings from (-1 for last layer)
-            pooling: Pooling strategy ('mean', 'last_token', 'cls_token')
-            
-        Returns:
-            List of embedding vectors
-        """
+        """Get embeddings for texts."""
         payload = {
             "texts": texts,
             "layer": layer,
@@ -343,11 +281,7 @@ class InferenceClient:
         return result.get("embeddings", [])
     
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics.
-        
-        Returns:
-            Dict with cache size and hit rate info
-        """
+        """Get cache statistics."""
         return {
             "cache_enabled": self._cache_enabled,
             "cache_size": len(self._cache),
@@ -358,73 +292,47 @@ class InferenceClient:
         self,
         text: str | List[str],
         add_special_tokens: bool = True,
-    ) -> Dict[str, Any]:
-        """Tokenize text using the model's tokenizer.
-        
-        Args:
-            text: Text string or list of strings to tokenize
-            add_special_tokens: Whether to add special tokens
-            
-        Returns:
-            Response with token_ids and tokens
-        """
-        return self._request(
+    ) -> TokenizeResponse:
+        """Tokenize text using the model's tokenizer."""
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/tokenize",
             json={"text": text, "add_special_tokens": add_special_tokens},
         )
+        return TokenizeResponse(**response_data)
     
     def detokenize(
         self,
         token_ids: List[int] | List[List[int]],
-    ) -> Dict[str, Any]:
-        """Detokenize token IDs using the model's tokenizer.
-        
-        Args:
-            token_ids: Token IDs (single list or list of lists)
-            
-        Returns:
-            Response with decoded text
-        """
-        return self._request(
+    ) -> DetokenizeResponse:
+        """Detokenize token IDs using the model's tokenizer."""
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/detokenize",
             json={"token_ids": token_ids},
         )
+        return DetokenizeResponse(**response_data)
     
-    def get_tokenizer_info(self) -> Dict[str, Any]:
-        """Get tokenizer configuration information.
-        
-        Returns:
-            Tokenizer information including vocab size and special tokens
-        """
-        return self._request("GET", f"/runs/{self.run_id}/tokenizer_info")
+    def get_tokenizer_info(self) -> TokenizerInfoResponse:
+        """Get tokenizer configuration information."""
+        response_data = self._request("GET", f"/runs/{self.run_id}/tokenizer_info")
+        return TokenizerInfoResponse(**response_data)
     
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get model architecture information.
-        
-        Returns:
-            Model information including architecture and parameter counts
-        """
-        return self._request("GET", f"/runs/{self.run_id}/model_info")
+    def get_model_info(self) -> ModelInfoResponse:
+        """Get model architecture information."""
+        response_data = self._request("GET", f"/runs/{self.run_id}/model_info")
+        return ModelInfoResponse(**response_data)
     
     def apply_chat_template(
         self,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
-    ) -> Dict[str, Any]:
-        """Apply the model's chat template to format messages.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            add_generation_prompt: Whether to add generation prompt
-            
-        Returns:
-            Response with formatted text and token_ids
-        """
-        return self._request(
+    ) -> ApplyChatTemplateResponse:
+        """Apply the model's chat template to format messages."""
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/apply_chat_template",
             json={"messages": messages, "add_generation_prompt": add_generation_prompt},
         )
+        return ApplyChatTemplateResponse(**response_data)
 

@@ -5,6 +5,11 @@ import time
 from typing import List, Dict, Any, Optional
 from collections import deque
 
+from .schemas import (
+    ForwardBackwardResponse,
+    OptimStepResponse,
+    SaveStateResponse,
+)
 from .exceptions import (
     SignalAPIError,
     ConnectionError as SignalConnectionError,
@@ -24,16 +29,7 @@ class TrainingClient:
         max_retries: int = 3,
         session: Optional[requests.Session] = None,
     ):
-        """Initialize training client.
-        
-        Args:
-            run_id: Run identifier
-            api_key: API key for authentication
-            base_url: Base URL of the API server
-            timeout: Request timeout in seconds (default: 3600 = 1 hour)
-            max_retries: Number of retries for failed requests (default: 3)
-            session: Optional shared session (for connection pooling)
-        """
+        """Initialize training client."""
         self.run_id = run_id
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -76,19 +72,7 @@ class TrainingClient:
         endpoint: str,
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """Make a request with exponential backoff retry.
-        
-        Args:
-            method: HTTP method
-            endpoint: API endpoint
-            json: Optional JSON payload
-            
-        Returns:
-            Response data
-            
-        Raises:
-            SignalAPIError: If request fails after retries
-        """
+        """Make a request with exponential backoff retry."""
         url = f"{self.base_url}{endpoint}"
         last_exception = None
         
@@ -132,18 +116,8 @@ class TrainingClient:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Compute gradients for a batch.
-        
-        Args:
-            batch_data: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, etc.)
-            loss_kwargs: Additional arguments for loss function
-            
-        Returns:
-            Response with loss and gradient stats
-        """
+    ) -> ForwardBackwardResponse:
+        """Compute gradients for a batch."""
         if loss_kwargs is None:
             loss_kwargs = {}
         
@@ -154,45 +128,38 @@ class TrainingClient:
             "loss_kwargs": loss_kwargs,
         }
         
-        result = self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/forward_backward",
             json=payload
         )
+        result = ForwardBackwardResponse(**response_data)
         
         # Track metrics
-        if "loss" in result:
-            self.loss_history.append(result["loss"])
-        if "grad_norm" in result:
-            self.grad_norm_history.append(result["grad_norm"])
+        self.loss_history.append(result.loss)
+        if result.grad_norm is not None:
+            self.grad_norm_history.append(result.grad_norm)
         
         return result
     
     def optim_step(
         self,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """Apply optimizer update.
-        
-        Args:
-            learning_rate: Optional learning rate override
-            
-        Returns:
-            Response with step metrics
-        """
+    ) -> OptimStepResponse:
+        """Apply optimizer update."""
         payload = {
             "learning_rate": learning_rate,
         }
         
-        result = self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/optim_step",
             json=payload
         )
+        result = OptimStepResponse(**response_data)
         
         # Update current step
-        if "step" in result:
-            self.current_step = result["step"]
+        self.current_step = result.step
         
         return result
     
@@ -203,19 +170,7 @@ class TrainingClient:
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Train on a single batch (convenience method).
-        
-        This combines forward_backward and optim_step into one call.
-        
-        Args:
-            batch_data: List of training examples
-            learning_rate: Optional learning rate override
-            loss_fn: Loss function to use
-            loss_kwargs: Additional arguments for loss function
-            
-        Returns:
-            Combined result with loss, grad_norm, and step
-        """
+        """Train on a single batch (convenience method)."""
         # Forward-backward
         fb_result = self.forward_backward(
             batch_data=batch_data,
@@ -229,10 +184,10 @@ class TrainingClient:
         
         # Combine results
         return {
-            "loss": fb_result.get("loss"),
-            "grad_norm": fb_result.get("grad_norm"),
-            "step": opt_result.get("step"),
-            "learning_rate": opt_result.get("learning_rate"),
+            "loss": fb_result.loss,
+            "grad_norm": fb_result.grad_norm,
+            "step": opt_result.step,
+            "learning_rate": opt_result.learning_rate,
         }
     
     def train_epoch(
@@ -243,18 +198,7 @@ class TrainingClient:
         loss_kwargs: Optional[Dict[str, Any]] = None,
         progress: bool = True,
     ) -> Dict[str, Any]:
-        """Train for one epoch over a dataloader.
-        
-        Args:
-            dataloader: Iterable of batch data
-            learning_rate: Optional learning rate override
-            loss_fn: Loss function to use
-            loss_kwargs: Additional arguments for loss function
-            progress: Whether to show progress bar
-            
-        Returns:
-            Summary statistics for the epoch
-        """
+        """Train for one epoch over a dataloader."""
         epoch_losses = []
         epoch_grad_norms = []
         
@@ -297,35 +241,23 @@ class TrainingClient:
         mode: str = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Save current model checkpoint.
-        
-        Args:
-            mode: Save mode ('adapter' or 'merged')
-            push_to_hub: Whether to push to HuggingFace Hub
-            hub_model_id: HuggingFace Hub model ID
-            
-        Returns:
-            Response with artifact information
-        """
+    ) -> SaveStateResponse:
+        """Save current model checkpoint."""
         payload = {
             "mode": mode,
             "push_to_hub": push_to_hub,
             "hub_model_id": hub_model_id,
         }
         
-        return self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{self.run_id}/save_state",
             json=payload
         )
+        return SaveStateResponse(**response_data)
     
     def get_metrics(self) -> Dict[str, Any]:
-        """Get training metrics.
-        
-        Returns:
-            Dict with loss_history, grad_norm_history, current_step
-        """
+        """Get training metrics."""
         return {
             "current_step": self.current_step,
             "loss_history": list(self.loss_history),

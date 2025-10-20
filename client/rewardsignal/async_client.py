@@ -395,21 +395,8 @@ class AsyncSignalClient:
             "loss_kwargs": loss_kwargs,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/forward_backward_async", json=payload)
-        return APIFuture(client=self, future_id=response["future_id"])
-    
-    async def optim_step(
-        self,
-        run_id: str,
-        learning_rate: Optional[float] = None,
-    ) -> OptimStepResponse:
-        """Apply optimizer step."""
-        payload = {
-            "learning_rate": learning_rate,
-        }
-        
-        response_data = await self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
-        return OptimStepResponse(**response_data)
+        response_data = await self._request("POST", f"/runs/{run_id}/forward_backward_async", json=payload)
+        return APIFuture(client=self, future_id=response_data["future_id"])
     
     async def optim_step_async(
         self,
@@ -421,8 +408,8 @@ class AsyncSignalClient:
             "learning_rate": learning_rate,
         }
         
-        response = await self._request("POST", f"/runs/{run_id}/optim_step_async", json=payload)
-        return APIFuture(client=self, future_id=response["future_id"])
+        response_data = await self._request("POST", f"/runs/{run_id}/optim_step_async", json=payload)
+        return APIFuture(client=self, future_id=response_data["future_id"])
     
     async def sample(
         self,
@@ -510,53 +497,58 @@ class AsyncSignalClient:
         response_data = await self._request("GET", f"/runs/{run_id}/metrics")
         return RunMetrics(**response_data)
     
-    async def list_runs(self) -> List[Dict[str, Any]]:
+    async def list_runs(self) -> List[RunResponse]:
         """List all runs."""
-        response = await self._request("GET", "/runs")
-        return response["runs"]
+        response_data = await self._request("GET", "/runs")
+        return [RunResponse(**run) for run in response_data["runs"]]
     
     async def tokenize(
         self,
         run_id: str,
         text: str | List[str],
         add_special_tokens: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> TokenizeResponse:
         """Tokenize text using the model's tokenizer."""
-        return await self._request(
+        response_data = await self._request(
             "POST",
             f"/runs/{run_id}/tokenize",
             json={"text": text, "add_special_tokens": add_special_tokens},
         )
+        return TokenizeResponse(**response_data)
     
     async def detokenize(
         self,
         run_id: str,
         token_ids: List[int] | List[List[int]],
-    ) -> Dict[str, Any]:
+    ) -> DetokenizeResponse:
         """Detokenize token IDs using the model's tokenizer."""
-        return await self._request(
+        response_data = await self._request(
             "POST",
             f"/runs/{run_id}/detokenize",
             json={"token_ids": token_ids},
         )
+        return DetokenizeResponse(**response_data)
     
-    async def get_tokenizer_info(self, run_id: str) -> Dict[str, Any]:
+    async def get_tokenizer_info(self, run_id: str) -> TokenizerInfoResponse:
         """Get tokenizer configuration information."""
-        return await self._request("GET", f"/runs/{run_id}/tokenizer_info")
+        response_data = await self._request("GET", f"/runs/{run_id}/tokenizer_info")
+        return TokenizerInfoResponse(**response_data)
     
-    async def get_model_info(self, run_id: str) -> Dict[str, Any]:
+    async def get_model_info(self, run_id: str) -> ModelInfoResponse:
         """Get model architecture information."""
-        return await self._request("GET", f"/runs/{run_id}/model_info")
+        response_data = await self._request("GET", f"/runs/{run_id}/model_info")
+        return ModelInfoResponse(**response_data)
     
     async def apply_chat_template(
         self,
         run_id: str,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> ApplyChatTemplateResponse:
         """Apply the model's chat template to format messages."""
-        return await self._request(
+        response_data = await self._request(
             "POST",
             f"/runs/{run_id}/apply_chat_template",
             json={"messages": messages, "add_generation_prompt": add_generation_prompt},
         )
+        return ApplyChatTemplateResponse(**response_data)

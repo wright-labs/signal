@@ -5,6 +5,18 @@ from typing import List, Dict, Any, Optional, Literal
 
 from .schemas import (
     RunConfig,
+    RunResponse,
+    RunStatus,
+    RunMetrics,
+    ForwardBackwardResponse,
+    OptimStepResponse,
+    SampleResponse,
+    SaveStateResponse,
+    TokenizeResponse,
+    DetokenizeResponse,
+    TokenizerInfoResponse,
+    ModelInfoResponse,
+    ApplyChatTemplateResponse,
 )
 from .exceptions import (
     SignalAPIError,
@@ -42,7 +54,7 @@ class SignalRun:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         **loss_kwargs
-    ) -> Dict[str, Any]:
+    ) -> ForwardBackwardResponse:
         """Perform forward-backward pass.
         
         Args:
@@ -65,7 +77,7 @@ class SignalRun:
     def optim_step(
         self,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> OptimStepResponse:
         """Apply optimizer step.
         
         Args:
@@ -86,7 +98,7 @@ class SignalRun:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> List[str]:
         """Generate samples.
         
         Args:
@@ -97,7 +109,7 @@ class SignalRun:
             return_logprobs: Whether to return log probabilities
             
         Returns:
-            Response with generated outputs
+            List of generated texts
         """
         return self.client.sample(
             run_id=self.run_id,
@@ -113,7 +125,7 @@ class SignalRun:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> SaveStateResponse:
         """Save model state.
         
         Args:
@@ -131,7 +143,7 @@ class SignalRun:
             hub_model_id=hub_model_id,
         )
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> RunStatus:
         """Get run status.
         
         Returns:
@@ -139,7 +151,7 @@ class SignalRun:
         """
         return self.client.get_run_status(self.run_id)
     
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> RunMetrics:
         """Get run metrics.
         
         Returns:
@@ -183,7 +195,7 @@ class SignalRun:
         self,
         text: str | List[str],
         add_special_tokens: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> TokenizeResponse:
         """Tokenize text using the model's tokenizer.
         
         Args:
@@ -202,7 +214,7 @@ class SignalRun:
     def detokenize(
         self,
         token_ids: List[int] | List[List[int]],
-    ) -> Dict[str, Any]:
+    ) -> DetokenizeResponse:
         """Detokenize token IDs using the model's tokenizer.
         
         Args:
@@ -216,7 +228,7 @@ class SignalRun:
             token_ids=token_ids,
         )
     
-    def get_tokenizer_info(self) -> Dict[str, Any]:
+    def get_tokenizer_info(self) -> TokenizerInfoResponse:
         """Get tokenizer configuration information.
         
         Returns:
@@ -224,7 +236,7 @@ class SignalRun:
         """
         return self.client.get_tokenizer_info(self.run_id)
     
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> ModelInfoResponse:
         """Get model architecture information.
         
         Returns:
@@ -236,7 +248,7 @@ class SignalRun:
         self,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> ApplyChatTemplateResponse:
         """Apply the model's chat template to format messages.
         
         Args:
@@ -417,12 +429,13 @@ class SignalClient:
             gradient_checkpointing=gradient_checkpointing,
         )
         
-        response = self._request("POST", "/runs", json=config.model_dump())
+        response_data = self._request("POST", "/runs", json=config.model_dump())
+        response = RunResponse(**response_data)
         
         return SignalRun(
             client=self,
-            run_id=response["run_id"],
-            config=response["config"],
+            run_id=response.run_id,
+            config=response.config,
         )
     
     def forward_backward(
@@ -432,7 +445,7 @@ class SignalClient:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> ForwardBackwardResponse:
         """Perform forward-backward pass.
         
         Delegates to TrainingClient internally.
@@ -459,7 +472,7 @@ class SignalClient:
         self,
         run_id: str,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> OptimStepResponse:
         """Apply optimizer step.
         
         Delegates to TrainingClient internally.
@@ -513,7 +526,7 @@ class SignalClient:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> SaveStateResponse:
         """Save model state.
         
         Delegates to TrainingClient internally.
@@ -534,7 +547,7 @@ class SignalClient:
             hub_model_id=hub_model_id,
         )
     
-    def get_run_status(self, run_id: str) -> Dict[str, Any]:
+    def get_run_status(self, run_id: str) -> RunStatus:
         """Get run status.
         
         Args:
@@ -543,9 +556,10 @@ class SignalClient:
         Returns:
             Run status information
         """
-        return self._request("GET", f"/runs/{run_id}/status")
+        response_data = self._request("GET", f"/runs/{run_id}/status")
+        return RunStatus(**response_data)
     
-    def get_run_metrics(self, run_id: str) -> Dict[str, Any]:
+    def get_run_metrics(self, run_id: str) -> RunMetrics:
         """Get run metrics.
         
         Args:
@@ -554,7 +568,8 @@ class SignalClient:
         Returns:
             Run metrics
         """
-        return self._request("GET", f"/runs/{run_id}/metrics")
+        response_data = self._request("GET", f"/runs/{run_id}/metrics")
+        return RunMetrics(**response_data)
     
     def list_runs(self) -> List[Dict[str, Any]]:
         """List all runs.
@@ -570,7 +585,7 @@ class SignalClient:
         run_id: str,
         text: str | List[str],
         add_special_tokens: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> TokenizeResponse:
         """Tokenize text using the model's tokenizer.
         
         Args:
@@ -581,17 +596,18 @@ class SignalClient:
         Returns:
             Response with token_ids and tokens
         """
-        return self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{run_id}/tokenize",
             json={"text": text, "add_special_tokens": add_special_tokens},
         )
+        return TokenizeResponse(**response_data)
     
     def detokenize(
         self,
         run_id: str,
         token_ids: List[int] | List[List[int]],
-    ) -> Dict[str, Any]:
+    ) -> DetokenizeResponse:
         """Detokenize token IDs using the model's tokenizer.
         
         Args:
@@ -601,13 +617,14 @@ class SignalClient:
         Returns:
             Response with decoded text
         """
-        return self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{run_id}/detokenize",
             json={"token_ids": token_ids},
         )
+        return DetokenizeResponse(**response_data)
     
-    def get_tokenizer_info(self, run_id: str) -> Dict[str, Any]:
+    def get_tokenizer_info(self, run_id: str) -> TokenizerInfoResponse:
         """Get tokenizer configuration information.
         
         Args:
@@ -616,9 +633,10 @@ class SignalClient:
         Returns:
             Tokenizer information including vocab size and special tokens
         """
-        return self._request("GET", f"/runs/{run_id}/tokenizer_info")
+        response_data = self._request("GET", f"/runs/{run_id}/tokenizer_info")
+        return TokenizerInfoResponse(**response_data)
     
-    def get_model_info(self, run_id: str) -> Dict[str, Any]:
+    def get_model_info(self, run_id: str) -> ModelInfoResponse:
         """Get model architecture information.
         
         Args:
@@ -627,14 +645,15 @@ class SignalClient:
         Returns:
             Model information including architecture and parameter counts
         """
-        return self._request("GET", f"/runs/{run_id}/model_info")
+        response_data = self._request("GET", f"/runs/{run_id}/model_info")
+        return ModelInfoResponse(**response_data)
     
     def apply_chat_template(
         self,
         run_id: str,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> ApplyChatTemplateResponse:
         """Apply the model's chat template to format messages.
         
         Args:
@@ -645,11 +664,12 @@ class SignalClient:
         Returns:
             Response with formatted text and token_ids
         """
-        return self._request(
+        response_data = self._request(
             "POST",
             f"/runs/{run_id}/apply_chat_template",
             json={"messages": messages, "add_generation_prompt": add_generation_prompt},
         )
+        return ApplyChatTemplateResponse(**response_data)
     
     def training(
         self,
