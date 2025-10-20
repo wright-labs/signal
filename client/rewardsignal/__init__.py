@@ -13,7 +13,7 @@ from .inference_client import InferenceClient
 from .async_client import AsyncSignalClient, AsyncSignalRun
 
 # Futures
-from .futures import SignalFuture, FutureGroup
+from .futures import APIFuture, FutureGroup
 
 # Exceptions
 from .exceptions import (
@@ -59,7 +59,7 @@ __all__ = [
     "AsyncSignalClient",
     "AsyncSignalRun",
     # Futures
-    "SignalFuture",
+    "APIFuture",
     "FutureGroup",
     # Exceptions
     "SignalAPIError",

@@ -1,8 +1,6 @@
 """Utility modules for training."""
 # Re-export everything for convenience
-from modal_runtime.utils.optimizer import setup_optimizer, save_optimizer_state, load_optimizer_state
 from modal_runtime.utils.tokenization import tokenize_batch
-from modal_runtime.utils.training import compute_forward_backward, save_gradients, load_gradients
 from modal_runtime.utils.checkpoint import (
     save_lora_checkpoint,
     save_merged_model,
@@ -15,13 +13,7 @@ from modal_runtime.utils.preference_utils import (
 )
 
 __all__ = [
-    "setup_optimizer",
-    "save_optimizer_state",
-    "load_optimizer_state",
     "tokenize_batch",
-    "compute_forward_backward",
-    "save_gradients",
-    "load_gradients",
     "save_lora_checkpoint",
     "save_merged_model",
     "find_latest_checkpoint",
@@ -31,4 +23,3 @@ __all__ = [
     "format_preference_pairs_for_dpo",
     "format_preference_pairs_with_chat_template",
 ]
-

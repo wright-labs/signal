@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 import sys
 import os
 import logging
+import uuid
 from pathlib import Path
 
 # Add current directory to path for modal_runtime imports
@@ -31,6 +32,7 @@ from api.logging_config import security_logger
 # from api.openai_compat import router as openai_router
 from api.frontier_client import get_frontier_client
 from api.pricing import calculate_estimated_cost, calculate_actual_cost, get_gpu_hourly_rate, calculate_run_cost
+from api.future_store import store_future, get_future, delete_future
 from api.schemas import (
     RunConfig,
     RunResponse,
@@ -394,6 +396,78 @@ async def root():
     }
 
 
+@app.get("/futures/{future_id}")
+async def get_future_status(
+    future_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Poll future status and get result when ready.
+    
+    Used by async clients to poll async execution started with _async endpoints.
+    """
+    try:
+        future = get_future(future_id)
+        
+        # Modal futures don't have .done(), use timeout trick to check status
+        # Attempt to get result with minimal timeout
+        try:
+            # Try to get result without blocking
+            result = future.get(timeout=0.001)
+            return {
+                "status": "completed",
+                "result": result,
+            }
+        except TimeoutError:
+            # Still running
+            return {
+                "status": "pending",
+            }
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Future {future_id} not found or expired"
+        )
+    except Exception as e:
+        logging.exception(f"Error getting future {future_id}: {e}")
+        return {
+            "status": "failed",
+            "error": str(e),
+        }
+
+
+@app.delete("/futures/{future_id}")
+async def cancel_future(
+    future_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Cancel a future.
+    
+    Attempts to cancel an async operation.
+    """
+    try:
+        future = get_future(future_id)
+        
+        # Modal futures support cancellation
+        try:
+            future.cancel()
+            delete_future(future_id)
+            return {
+                "status": "cancelled",
+                "future_id": future_id,
+            }
+        except Exception as e:
+            logging.warning(f"Failed to cancel future {future_id}: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+            }
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Future {future_id} not found"
+        )
+
+
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
@@ -733,7 +807,7 @@ async def create_run(
         )
 
 
-@app.post("/runs/{run_id}/forward_backward", response_model=ForwardBackwardResponse)
+@app.post("/runs/{run_id}/forward_backward")
 @limiter.limit("1000/minute")
 async def forward_backward(
     run_id: str,
@@ -741,7 +815,11 @@ async def forward_backward(
     request: Request,
     user_id: str = Depends(verify_auth),
 ):
-    """Perform forward-backward pass."""
+    """Perform forward-backward pass (blocking).
+    
+    Waits for completion and returns results immediately.
+    For async execution, use /forward_backward_async endpoint.
+    """
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
@@ -758,6 +836,8 @@ async def forward_backward(
         
         # Use stateful container (fast, model already loaded)
         session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Synchronous execution - blocks until complete
         result = session.forward_backward.remote(
             batch_data=fb_request.batch_data,
             loss_fn=fb_request.loss_fn,
@@ -792,7 +872,63 @@ async def forward_backward(
         )
 
 
-@app.post("/runs/{run_id}/optim_step", response_model=OptimStepResponse)
+@app.post("/runs/{run_id}/forward_backward_async")
+@limiter.limit("1000/minute")
+async def forward_backward_async(
+    run_id: str,
+    fb_request: ForwardBackwardRequest,
+    request: Request,
+    user_id: str = Depends(verify_auth),
+):
+    """Perform forward-backward pass (async).
+    
+    Returns immediately with a future_id for polling.
+    Use GET /futures/{future_id} to check status and retrieve results.
+    """
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get current step
+        current_step = run["current_step"]
+        
+        # Get GPU config from run config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        logging.info(f"Forward-backward async with GPU config: {gpu_config}")
+        
+        # Check balance (time-based, not step-based)
+        await check_and_charge_incremental(run_id, user_id, gpu_config)
+        
+        # Use stateful container (fast, model already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Async execution with .spawn()
+        future = session.forward_backward.spawn(
+            batch_data=fb_request.batch_data,
+            loss_fn=fb_request.loss_fn,
+            loss_kwargs=fb_request.loss_kwargs,
+        )
+        
+        # Store future and return ID
+        future_id = str(uuid.uuid4())
+        store_future(future_id, future, metadata={"run_id": run_id, "operation": "forward_backward"})
+        
+        return {
+            "future_id": future_id,
+            "status": "pending",
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in forward_backward_async for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Forward-backward pass failed. Please check your batch data or try again."
+        )
+
+
+@app.post("/runs/{run_id}/optim_step")
 @limiter.limit("300/minute")
 async def optim_step(
     run_id: str,
@@ -800,7 +936,11 @@ async def optim_step(
     req: Request,
     user_id: str = Depends(verify_auth),
 ):
-    """Apply optimizer step."""
+    """Apply optimizer step (blocking).
+    
+    Waits for completion and returns results immediately.
+    For async execution, use /optim_step_async endpoint.
+    """
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
@@ -816,6 +956,8 @@ async def optim_step(
         
         # Use stateful container (fast, optimizer already loaded)
         session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Synchronous execution - blocks until complete
         result = session.optim_step.remote(
             learning_rate=request.learning_rate,
         )
@@ -846,7 +988,60 @@ async def optim_step(
         )
 
 
-@app.post("/runs/{run_id}/sample", response_model=SampleResponse)
+@app.post("/runs/{run_id}/optim_step_async")
+@limiter.limit("300/minute")
+async def optim_step_async(
+    run_id: str,
+    request: OptimStepRequest,
+    req: Request,
+    user_id: str = Depends(verify_auth),
+):
+    """Apply optimizer step (async).
+    
+    Returns immediately with a future_id for polling.
+    Use GET /futures/{future_id} to check status and retrieve results.
+    """
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get current step
+        current_step = run["current_step"]
+        
+        # Get GPU config from run config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Check balance (time-based, not step-based)
+        await check_and_charge_incremental(run_id, user_id, gpu_config)
+        
+        # Use stateful container (fast, optimizer already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Async execution with .spawn()
+        future = session.optim_step.spawn(
+            learning_rate=request.learning_rate,
+        )
+        
+        # Store future and return ID
+        future_id = str(uuid.uuid4())
+        store_future(future_id, future, metadata={"run_id": run_id, "operation": "optim_step"})
+        
+        return {
+            "future_id": future_id,
+            "status": "pending",
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in optim_step_async for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Optimizer step failed. Please try again."
+        )
+
+
+@app.post("/runs/{run_id}/sample")
 @limiter.limit("20/minute")
 async def sample(
     run_id: str,
@@ -854,7 +1049,11 @@ async def sample(
     req: Request,
     user_id: str = Depends(verify_auth),
 ):
-    """Generate samples from the model."""
+    """Generate samples from the model (blocking).
+    
+    Waits for completion and returns results immediately.
+    For async execution, use /sample_async endpoint.
+    """
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
@@ -870,6 +1069,8 @@ async def sample(
         
         # Use stateful container (fast, model already loaded)
         session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Synchronous execution - blocks until complete
         result = session.sample.remote(
             prompts=request.prompts,
             max_tokens=request.max_tokens,
@@ -890,6 +1091,64 @@ async def sample(
         raise
     except Exception as e:
         logging.exception(f"Error in sample for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Sample generation failed. Please check your prompts or try again."
+        )
+
+
+@app.post("/runs/{run_id}/sample_async")
+@limiter.limit("20/minute")
+async def sample_async(
+    run_id: str,
+    request: SampleRequest,
+    req: Request,
+    user_id: str = Depends(verify_auth),
+):
+    """Generate samples from the model (async).
+    
+    Returns immediately with a future_id for polling.
+    Use GET /futures/{future_id} to check status and retrieve results.
+    """
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get current step
+        current_step = run["current_step"]
+        
+        # Use single GPU for inference regardless of training GPU count
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Check balance before expensive operations
+        await check_and_charge_incremental(run_id, user_id, gpu_config)
+        
+        # Use stateful container (fast, model already loaded)
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Async execution with .spawn()
+        future = session.sample.spawn(
+            prompts=request.prompts,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k if hasattr(request, 'top_k') else None,
+            return_logprobs=request.return_logprobs,
+        )
+        
+        # Store future and return ID
+        future_id = str(uuid.uuid4())
+        store_future(future_id, future, metadata={"run_id": run_id, "operation": "sample"})
+        
+        return {
+            "future_id": future_id,
+            "status": "pending",
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in sample_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Sample generation failed. Please check your prompts or try again."
@@ -1016,7 +1275,7 @@ async def generate_embeddings(
         )
 
 
-@app.post("/runs/{run_id}/save_state", response_model=SaveStateResponse)
+@app.post("/runs/{run_id}/save_state")
 @limiter.limit("5/minute")
 async def save_state(
     run_id: str,
@@ -1024,7 +1283,11 @@ async def save_state(
     req: Request,
     user_id: str = Depends(verify_auth),
 ):
-    """Save model state."""
+    """Save model state (blocking).
+    
+    Waits for completion and returns results immediately.
+    For async execution, use /save_state_async endpoint.
+    """
     try:
         # Verify run belongs to user
         run = await get_authorized_run(run_id, user_id)
@@ -1040,6 +1303,8 @@ async def save_state(
         
         # Use stateful container's save_state method
         session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Synchronous execution - blocks until complete
         result = session.save_state.remote(
             mode=request.mode,
             push_to_hub=request.push_to_hub,
@@ -1080,6 +1345,61 @@ async def save_state(
         raise
     except Exception as e:
         logging.exception(f"Error in save_state for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save model state. Please try again."
+        )
+
+
+@app.post("/runs/{run_id}/save_state_async")
+@limiter.limit("5/minute")
+async def save_state_async(
+    run_id: str,
+    request: SaveStateRequest,
+    req: Request,
+    user_id: str = Depends(verify_auth),
+):
+    """Save model state (async).
+    
+    Returns immediately with a future_id for polling.
+    Use GET /futures/{future_id} to check status and retrieve results.
+    """
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get current step
+        current_step = run["current_step"]
+        
+        # Use single GPU for save operation
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Check balance before expensive operations
+        await check_and_charge_incremental(run_id, user_id, gpu_config)
+        
+        # Use stateful container's save_state method
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Async execution with .spawn()
+        future = session.save_state.spawn(
+            mode=request.mode,
+            push_to_hub=request.push_to_hub,
+            hub_model_id=request.hub_model_id,
+        )
+        
+        # Store future and return ID
+        future_id = str(uuid.uuid4())
+        store_future(future_id, future, metadata={"run_id": run_id, "operation": "save_state"})
+        
+        return {
+            "future_id": future_id,
+            "status": "pending",
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in save_state_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to save model state. Please try again."

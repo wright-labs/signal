@@ -1,7 +1,7 @@
 """Asynchronous Python client SDK for Signal API."""
 
 import httpx
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, Union
 
 from .schemas import (
     RunConfig,
@@ -30,6 +30,7 @@ from .exceptions import (
     ConnectionError as SignalConnectionError,
     TimeoutError as SignalTimeoutError,
 )
+from .futures import APIFuture
 
 
 class AsyncSignalRun:
@@ -434,7 +435,8 @@ class AsyncSignalClient:
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        return_future: bool = False,
+    ) -> Union[Dict[str, Any], APIFuture]:
         """Perform forward-backward pass.
         
         Args:
@@ -443,9 +445,10 @@ class AsyncSignalClient:
             accumulate: Whether to accumulate gradients
             loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
             loss_kwargs: Additional arguments for the loss function
+            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with loss and gradient stats
+            Response with loss and gradient stats, or APIFuture if return_future=True
         """
         if loss_kwargs is None:
             loss_kwargs = {}
@@ -457,27 +460,51 @@ class AsyncSignalClient:
             "loss_kwargs": loss_kwargs,
         }
         
-        return await self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
+        # Add return_future as query param
+        endpoint = f"/runs/{run_id}/forward_backward"
+        if return_future:
+            endpoint += "?return_future=true"
+        
+        response = await self._request("POST", endpoint, json=payload)
+        
+        if return_future and "future_id" in response:
+            # Return APIFuture for polling
+            return APIFuture(client=self, future_id=response["future_id"])
+        
+        return response
     
     async def optim_step(
         self,
         run_id: str,
         learning_rate: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        return_future: bool = False,
+    ) -> Union[Dict[str, Any], APIFuture]:
         """Apply optimizer step.
         
         Args:
             run_id: Run identifier
             learning_rate: Optional learning rate override
+            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with step metrics
+            Response with step metrics, or APIFuture if return_future=True
         """
         payload = {
             "learning_rate": learning_rate,
         }
         
-        return await self._request("POST", f"/runs/{run_id}/optim_step", json=payload)
+        # Add return_future as query param
+        endpoint = f"/runs/{run_id}/optim_step"
+        if return_future:
+            endpoint += "?return_future=true"
+        
+        response = await self._request("POST", endpoint, json=payload)
+        
+        if return_future and "future_id" in response:
+            # Return APIFuture for polling
+            return APIFuture(client=self, future_id=response["future_id"])
+        
+        return response
     
     async def sample(
         self,
@@ -487,7 +514,8 @@ class AsyncSignalClient:
         temperature: float = 0.7,
         top_p: float = 0.9,
         return_logprobs: bool = False,
-    ) -> Dict[str, Any]:
+        return_future: bool = False,
+    ) -> Union[Dict[str, Any], APIFuture]:
         """Generate samples.
         
         Args:
@@ -497,9 +525,10 @@ class AsyncSignalClient:
             temperature: Sampling temperature
             top_p: Nucleus sampling parameter
             return_logprobs: Whether to return log probabilities
+            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with generated outputs
+            Response with generated outputs, or APIFuture if return_future=True
         """
         payload = {
             "prompts": prompts,
@@ -509,7 +538,18 @@ class AsyncSignalClient:
             "return_logprobs": return_logprobs,
         }
         
-        return await self._request("POST", f"/runs/{run_id}/sample", json=payload)
+        # Add return_future as query param
+        endpoint = f"/runs/{run_id}/sample"
+        if return_future:
+            endpoint += "?return_future=true"
+        
+        response = await self._request("POST", endpoint, json=payload)
+        
+        if return_future and "future_id" in response:
+            # Return APIFuture for polling
+            return APIFuture(client=self, future_id=response["future_id"])
+        
+        return response
     
     async def save_state(
         self,
@@ -517,7 +557,8 @@ class AsyncSignalClient:
         mode: Literal["adapter", "merged"] = "adapter",
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        return_future: bool = False,
+    ) -> Union[Dict[str, Any], APIFuture]:
         """Save model state.
         
         Args:
@@ -525,9 +566,10 @@ class AsyncSignalClient:
             mode: Save mode ('adapter' or 'merged')
             push_to_hub: Whether to push to HuggingFace Hub
             hub_model_id: HuggingFace Hub model ID
+            return_future: If True, returns APIFuture for async polling
             
         Returns:
-            Response with artifact information
+            Response with artifact information, or APIFuture if return_future=True
         """
         payload = {
             "mode": mode,
@@ -535,7 +577,18 @@ class AsyncSignalClient:
             "hub_model_id": hub_model_id,
         }
         
-        return await self._request("POST", f"/runs/{run_id}/save_state", json=payload)
+        # Add return_future as query param
+        endpoint = f"/runs/{run_id}/save_state"
+        if return_future:
+            endpoint += "?return_future=true"
+        
+        response = await self._request("POST", endpoint, json=payload)
+        
+        if return_future and "future_id" in response:
+            # Return APIFuture for polling
+            return APIFuture(client=self, future_id=response["future_id"])
+        
+        return response
     
     async def get_run_status(self, run_id: str) -> Dict[str, Any]:
         """Get run status.

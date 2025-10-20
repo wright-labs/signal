@@ -154,36 +154,13 @@ def apply_lora_to_model(
     return model
 
 
-def _load_as_peft_model(model: Any, checkpoint_path: Path) -> Any:
-    """Load checkpoint as PEFT model."""
-    from peft import PeftModel
-    
-    # Get the base model from the PEFT wrapper
-    base_model = model.base_model if hasattr(model, 'base_model') else model
-    
-    # Load adapter weights
-    model = PeftModel.from_pretrained(
-        base_model,
-        str(checkpoint_path),
-        is_trainable=True,
-    )
-    print(f"✓ Loaded PEFT checkpoint")
-    return model
-
-
-def _load_state_dict(model: Any, checkpoint_file: Path) -> Any:
-    """Load checkpoint as state dict."""
-    state_dict = torch.load(checkpoint_file, map_location="cpu")
-    model.load_state_dict(state_dict, strict=False)
-    print(f"✓ Loaded checkpoint from {checkpoint_file.name}")
-    return model
-
-
 def load_lora_checkpoint(
     model: Any,
     checkpoint_path: str,
 ) -> Any:
-    """Load LoRA checkpoint into model."""
+    """Load LoRA checkpoint into model using PEFT."""
+    from peft import PeftModel
+    
     checkpoint_path = Path(checkpoint_path)
     
     if not checkpoint_path.exists():
@@ -191,22 +168,23 @@ def load_lora_checkpoint(
     
     print(f"Loading LoRA checkpoint from {checkpoint_path}...")
     
-    # Try PEFT format first (most common) - check for adapter_config.json
+    # Check for PEFT format (adapter_config.json)
     adapter_config = checkpoint_path / "adapter_config.json"
-    if adapter_config.exists():
-        return _load_as_peft_model(model, checkpoint_path)
+    if not adapter_config.exists():
+        raise FileNotFoundError(
+            f"No adapter_config.json found at {checkpoint_path}. "
+            f"Use PEFT's save_pretrained() to save checkpoints."
+        )
     
-    # Try state dict format - check for adapter_model.bin
-    adapter_model = checkpoint_path / "adapter_model.bin"
-    if adapter_model.exists():
-        return _load_state_dict(model, adapter_model)
+    # Get the base model from the PEFT wrapper if already wrapped
+    base_model = model.base_model if hasattr(model, 'base_model') else model
     
-    # Try as direct checkpoint file (.pt or .bin)
-    if checkpoint_path.suffix in [".pt", ".bin"]:
-        return _load_state_dict(model, checkpoint_path)
-    
-    # Nothing worked
-    raise FileNotFoundError(
-        f"No valid checkpoint found at {checkpoint_path}. "
-        f"Expected: adapter_config.json + adapter_model.bin, or a .pt/.bin file."
+    # Load adapter weights using PEFT
+    model = PeftModel.from_pretrained(
+        base_model,
+        str(checkpoint_path),
+        is_trainable=True,
     )
+    print(f"✓ Loaded PEFT checkpoint")
+    
+    return model
