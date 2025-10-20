@@ -9,11 +9,30 @@ import logging
 
 from api.auth import verify_auth
 from api.registry import RunRegistry
-from api.token_counter import count_tokens, count_tokens_messages
+import tiktoken
 
 logger = logging.getLogger(__name__)
 
-# Optional Modal import - only available when Modal is properly configured
+def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
+    """Count tokens using tiktoken."""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    return len(encoding.encode(text))
+
+def count_tokens_messages(messages: list, model: str = "gpt-3.5-turbo") -> int:
+    """Count tokens in chat messages using tiktoken."""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    total_tokens = 0
+    for message in messages:
+        total_tokens += len(encoding.encode(str(message.get("content", ""))))
+    return total_tokens
+
 try:
     from modal_runtime import sample as modal_sample
     MODAL_AVAILABLE = True
@@ -23,12 +42,7 @@ except ImportError:
 
 
 router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
-
-# Initialize registry
 run_registry = RunRegistry()
-
-
-# OpenAI-compatible schemas
 
 class ChatMessage(BaseModel):
     """Chat message in OpenAI format."""
