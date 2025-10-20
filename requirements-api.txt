@@ -28,6 +28,9 @@ modal>=0.69.0
 # Configuration
 pyyaml>=6.0.0
 
+# Token counting for accurate billing
+tiktoken>=0.5.0
+
 # Testing dependencies
 pytest>=8.0.0
 pytest-cov>=4.1.0

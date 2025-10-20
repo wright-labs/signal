@@ -9,6 +9,7 @@ import logging
 
 from api.auth import verify_auth
 from api.registry import RunRegistry
+from api.token_counter import count_tokens, count_tokens_messages
 
 logger = logging.getLogger(__name__)
 
@@ -184,11 +185,10 @@ async def chat_completions(
                 finish_reason="stop"
             ))
         
-        # Estimate token counts (rough word-based approximation)
-        # TODO: This is an estimate. Use tiktoken for accurate token counting.
-        # We use 1.3x word count as a heuristic (1 token ≈ 0.75 words)
-        prompt_tokens = len(prompt.split()) * 1.3
-        completion_tokens = sum(len(c.message.content.split()) * 1.3 for c in choices)
+        # Count tokens accurately using tiktoken
+        messages_for_counting = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        prompt_tokens = count_tokens_messages(messages_for_counting, model=request.model)
+        completion_tokens = sum(count_tokens(c.message.content, model=request.model) for c in choices)
         
         response = ChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
@@ -196,9 +196,9 @@ async def chat_completions(
             model=request.model,
             choices=choices,
             usage=ChatCompletionUsage(
-                prompt_tokens=int(prompt_tokens),
-                completion_tokens=int(completion_tokens),
-                total_tokens=int(prompt_tokens + completion_tokens),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
             )
         )
         
@@ -266,10 +266,9 @@ async def completions(
                 finish_reason="stop"
             ))
         
-        # Estimate token counts (rough word-based approximation)
-        # TODO: This is an estimate. Use tiktoken for accurate token counting.
-        prompt_tokens = sum(len(p.split()) * 1.3 for p in all_prompts)
-        completion_tokens = sum(len(c.text.split()) * 1.3 for c in choices)
+        # Count tokens accurately using tiktoken
+        prompt_tokens = sum(count_tokens(p, model=request.model) for p in all_prompts)
+        completion_tokens = sum(count_tokens(c.text, model=request.model) for c in choices)
         
         response = CompletionResponse(
             id=f"cmpl-{uuid.uuid4().hex[:8]}",
@@ -277,9 +276,9 @@ async def completions(
             model=request.model,
             choices=choices,
             usage=ChatCompletionUsage(
-                prompt_tokens=int(prompt_tokens),
-                completion_tokens=int(completion_tokens),
-                total_tokens=int(prompt_tokens + completion_tokens),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
             )
         )
         

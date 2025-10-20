@@ -89,9 +89,7 @@ class TrainingSessionBase:
         """Shared container startup logic."""
         self.gpu_config_str = gpu_config
         
-        print("=" * 80)
         print(f"CONTAINER STARTED - GPU Config: {gpu_config}")
-        print("=" * 80)
         
         # Detect GPUs
         if torch.cuda.is_available():
@@ -114,13 +112,11 @@ class TrainingSessionBase:
         )
         self.monitor_thread.start()
         print("✓ Background monitoring thread started")
-        print("=" * 80)
+        
     
     def container_shutdown_impl(self):
         """Shared container shutdown logic."""
-        print("=" * 80)
         print("CONTAINER SHUTTING DOWN")
-        print("=" * 80)
         
         # Stop monitoring
         self.should_monitor = False
@@ -172,12 +168,10 @@ class TrainingSessionBase:
         """Initialize training session with model and optimizer."""
         self._update_activity()
         
-        print("\n" + "=" * 80)
         print(f"INITIALIZING TRAINING SESSION")
         print(f"Run ID: {run_id}")
         print(f"Model: {base_model}")
         print(f"GPU Config: {self.gpu_config_str} ({self.num_gpus} GPUs)")
-        print("=" * 80)
         
         # Store config
         self.user_id = user_id
@@ -293,13 +287,31 @@ class TrainingSessionBase:
         
         print("✓ Optimizer ready")
         
+        # Setup learning rate scheduler (optional)
+        if self.config.get("use_scheduler", False):
+            from transformers import get_scheduler
+            scheduler_type = self.config.get("scheduler_type", "cosine")
+            num_warmup_steps = self.config.get("warmup_steps", 0)
+            num_training_steps = self.config.get("max_steps", 1000)
+            
+            print(f"\n5. Setting up LR scheduler: {scheduler_type}")
+            self.scheduler = get_scheduler(
+                name=scheduler_type,
+                optimizer=self.optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps,
+            )
+            print(f"   ✓ Scheduler configured (warmup: {num_warmup_steps}, total: {num_training_steps})")
+        else:
+            self.scheduler = None
+        
         print("\n" + "=" * 80)
         print("✓ INITIALIZATION COMPLETE")
         print(f"   Model: {base_model}")
         print(f"   GPUs: {self.num_gpus}x {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}")
         print(f"   Trainable params: {trainable_params:,}")
         print(f"   Current step: {self.current_step}")
-        print("=" * 80)
+        
         
         return {
             "status": "success",
@@ -411,6 +423,10 @@ class TrainingSessionBase:
         self.optimizer.step()
         self.optimizer.zero_grad()
         
+        # Step scheduler if configured
+        if self.scheduler is not None:
+            self.scheduler.step()
+        
         # Reset accumulation
         self.accumulation_count = 0
         self.current_step += 1
@@ -449,24 +465,55 @@ class TrainingSessionBase:
         
         outputs = []
         token_ids_list = []
+        all_logprobs = [] if return_logprobs else None
         
         model_to_use.eval()
         for prompt in prompts:
             inputs = self.tokenizer(prompt, return_tensors="pt").to(model_to_use.device)
             
             with torch.no_grad():
-                generated = model_to_use.generate(
-                    **inputs,
-                    max_new_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    do_sample=True,
-                )
+                if return_logprobs:
+                    # Generate with scores to extract logprobs
+                    generation_output = model_to_use.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        do_sample=True,
+                        output_scores=True,
+                        return_dict_in_generate=True,
+                    )
+                    generated = generation_output.sequences[0]
+                    
+                    # Extract logprobs from scores
+                    scores = generation_output.scores
+                    logprobs = []
+                    input_length = inputs.input_ids.shape[1]
+                    
+                    for i, score in enumerate(scores):
+                        # Get log probabilities
+                        log_probs = torch.nn.functional.log_softmax(score[0], dim=-1)
+                        # Get the token ID that was actually generated
+                        token_id = generated[input_length + i]
+                        # Get its log probability
+                        token_logprob = log_probs[token_id].item()
+                        logprobs.append(token_logprob)
+                    
+                    all_logprobs.append(logprobs)
+                else:
+                    generated = model_to_use.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        do_sample=True,
+                    )[0]
             
-            output_text = self.tokenizer.decode(generated[0], skip_special_tokens=True)
+            output_text = self.tokenizer.decode(generated, skip_special_tokens=True)
             outputs.append(output_text)
-            token_ids_list.append(generated[0].tolist())
+            token_ids_list.append(generated.tolist())
         
         model_to_use.train()
         
@@ -474,7 +521,7 @@ class TrainingSessionBase:
             "status": "success",
             "outputs": outputs,
             "token_ids": token_ids_list,
-            "logprobs": None,
+            "logprobs": all_logprobs,
             "step": self.current_step,
         }
     
@@ -483,22 +530,100 @@ class TrainingSessionBase:
         self,
         mode: str = "adapter",
         tag: Optional[str] = None,
+        push_to_hub: bool = False,
+        hub_model_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Save model checkpoint."""
+        """Save model checkpoint to local volume, S3/R2, and optionally HuggingFace Hub."""
         self._update_activity()
         
         if tag is None:
             tag = f"step_{self.current_step}"
         
+        # Save checkpoint locally to Modal volume
         save_path = self._save_checkpoint_internal(tag=tag)
         data_volume.commit()
         
-        return {
+        result = {
             "status": "success",
             "save_path": save_path,
+            "local_path": save_path,
             "step": self.current_step,
             "mode": mode,
         }
+        
+        # Upload to S3/R2 for long-term storage
+        try:
+            from modal_runtime.s3_client import upload_directory, generate_signed_url
+            from datetime import datetime, timezone, timedelta
+            
+            print(f"\nUploading checkpoint to S3/R2...")
+            upload_result = upload_directory(
+                local_path=save_path,
+                s3_prefix=f"tenants/{self.user_id}/runs/{self.run_id}/checkpoints/{tag}/",
+            )
+            
+            s3_uri = upload_result["s3_uri"]
+            result["s3_uri"] = s3_uri
+            
+            # Generate signed download URL (valid for 1 hour)
+            download_url = generate_signed_url(s3_uri, expiration=3600)
+            download_expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            
+            result["download_url"] = download_url
+            result["download_expires_at"] = download_expires_at
+            result["manifest"] = {
+                "files_uploaded": upload_result.get("files_uploaded", 0),
+                "total_size_bytes": upload_result.get("total_bytes", 0),
+            }
+            
+            print(f"✓ Uploaded {upload_result.get('files_uploaded', 0)} files to S3/R2")
+            
+        except Exception as e:
+            print(f"Warning: Failed to upload to S3/R2: {e}")
+            result["s3_upload_error"] = str(e)
+        
+        # Push to HuggingFace Hub if requested
+        if push_to_hub and hub_model_id:
+            try:
+                import os
+                hf_token = os.environ.get("HF_TOKEN")
+                
+                if not hf_token:
+                    print("Warning: HF_TOKEN not set, skipping Hub push")
+                    result["hub_push_error"] = "HF_TOKEN not configured"
+                else:
+                    print(f"\nPushing to HuggingFace Hub: {hub_model_id}...")
+                    
+                    model_to_save = self.model.module if self.is_multi_gpu else self.model
+                    
+                    # Push model to Hub
+                    model_to_save.push_to_hub(
+                        hub_model_id,
+                        token=hf_token,
+                        commit_message=f"Checkpoint at step {self.current_step}",
+                        private=True,
+                    )
+                    
+                    # Also push tokenizer
+                    self.tokenizer.push_to_hub(
+                        hub_model_id,
+                        token=hf_token,
+                        commit_message=f"Tokenizer at step {self.current_step}",
+                        private=True,
+                    )
+                    
+                    result["pushed_to_hub"] = True
+                    result["hub_model_id"] = hub_model_id
+                    print(f"✓ Pushed to Hub: {hub_model_id}")
+                    
+            except Exception as e:
+                print(f"Warning: Failed to push to Hub: {e}")
+                result["hub_push_error"] = str(e)
+                result["pushed_to_hub"] = False
+        else:
+            result["pushed_to_hub"] = False
+        
+        return result
     
     def get_state_impl(self) -> Dict[str, Any]:
         """Get current session state."""
@@ -516,6 +641,175 @@ class TrainingSessionBase:
             "is_multi_gpu": self.is_multi_gpu,
             "gpu_summary": gpu_summary,
         }
+    
+    def tokenize_impl(self, texts: List[str], add_special_tokens: bool = True) -> Dict[str, Any]:
+        """Tokenize text(s) using the model's tokenizer."""
+        self._update_activity()
+        
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer not initialized. Call initialize() first.")
+        
+        if not isinstance(texts, list):
+            texts = [texts]
+        
+        encoded = [self.tokenizer.encode(text, add_special_tokens=add_special_tokens) for text in texts]
+        tokens = [self.tokenizer.convert_ids_to_tokens(ids) for ids in encoded]
+        
+        return {"token_ids": encoded, "tokens": tokens}
+    
+    def detokenize_impl(self, token_ids) -> Dict[str, Any]:
+        """Detokenize token IDs to text."""
+        self._update_activity()
+        
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer not initialized. Call initialize() first.")
+        
+        if isinstance(token_ids[0], list):
+            texts = [self.tokenizer.decode(ids) for ids in token_ids]
+        else:
+            texts = self.tokenizer.decode(token_ids)
+        return {"text": texts}
+    
+    def get_tokenizer_info_impl(self) -> Dict[str, Any]:
+        """Get tokenizer configuration."""
+        self._update_activity()
+        
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer not initialized. Call initialize() first.")
+        
+        return {
+            "vocab_size": len(self.tokenizer),
+            "model_max_length": self.tokenizer.model_max_length,
+            "bos_token_id": self.tokenizer.bos_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "pad_token_id": self.tokenizer.pad_token_id,
+            "unk_token_id": self.tokenizer.unk_token_id,
+            "special_tokens": {
+                "bos_token": self.tokenizer.bos_token,
+                "eos_token": self.tokenizer.eos_token,
+                "pad_token": self.tokenizer.pad_token,
+                "unk_token": self.tokenizer.unk_token,
+            }
+        }
+    
+    def get_model_info_impl(self) -> Dict[str, Any]:
+        """Get model architecture information."""
+        self._update_activity()
+        
+        if self.model is None:
+            raise RuntimeError("Model not initialized. Call initialize() first.")
+        
+        model = self.model.module if self.is_multi_gpu else self.model
+        config = model.config
+        
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        return {
+            "base_model": self.config.get("base_model"),
+            "architecture": config.model_type,
+            "num_parameters": total_params,
+            "num_trainable_parameters": trainable_params,
+            "hidden_size": getattr(config, "hidden_size", None),
+            "num_layers": getattr(config, "num_hidden_layers", None),
+            "num_attention_heads": getattr(config, "num_attention_heads", None),
+            "vocab_size": getattr(config, "vocab_size", None),
+            "max_position_embeddings": getattr(config, "max_position_embeddings", None),
+            "chat_template": self.tokenizer.chat_template if hasattr(self.tokenizer, "chat_template") else None,
+        }
+    
+    def apply_chat_template_impl(self, messages: List[Dict[str, str]], add_generation_prompt: bool = False) -> Dict[str, Any]:
+        """Apply chat template to messages."""
+        self._update_activity()
+        
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer not initialized. Call initialize() first.")
+        
+        if not hasattr(self.tokenizer, "apply_chat_template"):
+            raise ValueError("Tokenizer does not have chat template support")
+        
+        text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt
+        )
+        token_ids = self.tokenizer.encode(text)
+        
+        return {"text": text, "token_ids": token_ids}
+    
+    def generate_embeddings_impl(self, texts: List[str], layer: int = -1, pooling: str = "mean") -> Dict[str, Any]:
+        """Generate embeddings for texts."""
+        self._update_activity()
+        
+        if self.model is None:
+            raise RuntimeError("Model not initialized. Call initialize() first.")
+        
+        model = self.model.module if self.is_multi_gpu else self.model
+        model.eval()
+        
+        embeddings_list = []
+        with torch.no_grad():
+            for text in texts:
+                inputs = self.tokenizer(text, return_tensors="pt").to(model.device)
+                outputs = model(**inputs, output_hidden_states=True)
+                
+                # Get hidden states from specified layer
+                hidden_states = outputs.hidden_states[layer]
+                
+                # Apply pooling
+                if pooling == "mean":
+                    embedding = hidden_states.mean(dim=1).squeeze()
+                elif pooling == "last_token":
+                    embedding = hidden_states[:, -1, :].squeeze()
+                elif pooling == "cls_token":
+                    embedding = hidden_states[:, 0, :].squeeze()
+                
+                embeddings_list.append(embedding.cpu().tolist())
+        
+        model.train()
+        return {
+            "embeddings": embeddings_list,
+            "dimensions": len(embeddings_list[0]) if embeddings_list else 0
+        }
+    
+    def sample_stream_impl(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7, top_p: float = 0.9):
+        """Stream generated tokens one by one."""
+        self._update_activity()
+        
+        if self.model is None:
+            raise RuntimeError("Model not initialized. Call initialize() first.")
+        
+        from transformers import TextIteratorStreamer
+        import threading
+        
+        model = self.model.module if self.is_multi_gpu else self.model
+        model.eval()
+        
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(model.device)
+        
+        streamer = TextIteratorStreamer(self.tokenizer, skip_special_tokens=True)
+        
+        generation_kwargs = {
+            **inputs,
+            "max_new_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "do_sample": temperature > 0,
+            "streamer": streamer,
+        }
+        
+        # Generate in separate thread
+        thread = threading.Thread(target=model.generate, kwargs=generation_kwargs)
+        thread.start()
+        
+        # Yield tokens as they're generated
+        for token in streamer:
+            yield {"token": token, "is_finished": False}
+        
+        thread.join()
+        yield {"token": "", "is_finished": True}
+        
+        model.train()
     
     def _save_checkpoint_internal(self, tag: str) -> str:
         """Internal checkpoint save."""
@@ -588,6 +882,34 @@ class TrainingSession_L40S_1(TrainingSessionBase):
     @modal.method()
     def get_state(self):
         return self.get_state_impl()
+    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
 
 
 @app.cls(
@@ -633,6 +955,34 @@ class TrainingSession_L40S_2(TrainingSessionBase):
     @modal.method()
     def get_state(self):
         return self.get_state_impl()
+    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
 
 
 @app.cls(
@@ -677,7 +1027,35 @@ class TrainingSession_L40S_4(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(
@@ -722,7 +1100,35 @@ class TrainingSession_A100_80GB_1(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(
@@ -767,7 +1173,35 @@ class TrainingSession_A100_80GB_2(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(
@@ -812,7 +1246,35 @@ class TrainingSession_A100_80GB_4(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(
@@ -857,7 +1319,35 @@ class TrainingSession_A100_80GB_8(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(
@@ -902,7 +1392,35 @@ class TrainingSession_H100_1(TrainingSessionBase):
     
     @modal.method()
     def get_state(self):
-        return self.get_state_impl()
+        return self.get_state_impl()    
+    @modal.method()
+    def tokenize(self, **kwargs):
+        return self.tokenize_impl(**kwargs)
+    
+    @modal.method()
+    def detokenize(self, **kwargs):
+        return self.detokenize_impl(**kwargs)
+    
+    @modal.method()
+    def get_tokenizer_info(self):
+        return self.get_tokenizer_info_impl()
+    
+    @modal.method()
+    def get_model_info(self):
+        return self.get_model_info_impl()
+    
+    @modal.method()
+    def apply_chat_template(self, **kwargs):
+        return self.apply_chat_template_impl(**kwargs)
+    
+    @modal.method()
+    def generate_embeddings(self, **kwargs):
+        return self.generate_embeddings_impl(**kwargs)
+    
+    @modal.method()
+    def sample_stream(self, **kwargs):
+        return self.sample_stream_impl(**kwargs)
+
 
 
 @app.cls(

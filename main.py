@@ -934,11 +934,48 @@ async def sample_stream(
     user_id: str = Depends(verify_auth),
 ):
     """Stream generated text token-by-token using Server-Sent Events."""
-    # TODO: Implement streaming with stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="Streaming is temporarily unavailable. Use /runs/{run_id}/sample instead."
-    )
+    try:
+        from sse_starlette.sse import EventSourceResponse
+        import json
+        
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Stream generation using Modal's generator support
+        async def generate():
+            try:
+                # Use remote_gen for streaming
+                generator = session.sample_stream.remote_gen(
+                    prompt=request.prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p
+                )
+                
+                # Stream chunks as they arrive
+                async for chunk in generator:
+                    yield {"data": json.dumps(chunk)}
+            
+            except Exception as e:
+                logging.exception(f"Error during streaming for run {run_id}: {e}")
+                yield {"data": json.dumps({"error": str(e), "is_finished": True})}
+        
+        return EventSourceResponse(generate())
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in sample_stream for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to start streaming generation. Please try again."
+        )
 
 
 @app.post("/runs/{run_id}/embeddings", response_model=EmbeddingsResponse)
@@ -950,11 +987,33 @@ async def generate_embeddings(
     user_id: str = Depends(verify_auth),
 ):
     """Generate embeddings from the model."""
-    # TODO: Implement embeddings with stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="Embeddings endpoint is temporarily unavailable."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Generate embeddings
+        result = session.generate_embeddings.remote(
+            texts=request.texts,
+            layer=request.layer,
+            pooling=request.pooling
+        )
+        
+        return EmbeddingsResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in generate_embeddings for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate embeddings. Please try again."
+        )
 
 
 @app.post("/runs/{run_id}/save_state", response_model=SaveStateResponse)
@@ -1034,11 +1093,33 @@ async def tokenize(
     user_id: str = Depends(verify_auth),
 ):
     """Tokenize text using the model's tokenizer."""
-    # TODO: Implement using stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="This endpoint is temporarily unavailable during the stateful migration. Use the training endpoints instead."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Tokenize using the model's tokenizer
+        texts = request.text if isinstance(request.text, list) else [request.text]
+        result = session.tokenize.remote(
+            texts=texts,
+            add_special_tokens=request.add_special_tokens
+        )
+        
+        return TokenizeResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in tokenize for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to tokenize text. Please try again."
+        )
 
 
 @app.post("/runs/{run_id}/detokenize", response_model=DetokenizeResponse)
@@ -1048,11 +1129,29 @@ async def detokenize(
     user_id: str = Depends(verify_auth),
 ):
     """Detokenize token IDs using the model's tokenizer."""
-    # TODO: Implement using stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="This endpoint is temporarily unavailable during the stateful migration."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Detokenize using the model's tokenizer
+        result = session.detokenize.remote(token_ids=request.token_ids)
+        
+        return DetokenizeResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in detokenize for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to detokenize token IDs. Please try again."
+        )
 
 
 @app.get("/runs/{run_id}/tokenizer_info", response_model=TokenizerInfoResponse)
@@ -1061,11 +1160,29 @@ async def get_tokenizer_info(
     user_id: str = Depends(verify_auth),
 ):
     """Get tokenizer configuration information."""
-    # TODO: Implement using stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="This endpoint is temporarily unavailable during the stateful migration."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Get tokenizer info
+        result = session.get_tokenizer_info.remote()
+        
+        return TokenizerInfoResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in get_tokenizer_info for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get tokenizer information. Please try again."
+        )
 
 
 @app.get("/runs/{run_id}/model_info", response_model=ModelInfoResponse)
@@ -1074,11 +1191,29 @@ async def get_model_info(
     user_id: str = Depends(verify_auth),
 ):
     """Get model architecture information."""
-    # TODO: Implement using stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="This endpoint is temporarily unavailable during the stateful migration."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Get model info
+        result = session.get_model_info.remote()
+        
+        return ModelInfoResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in get_model_info for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to get model information. Please try again."
+        )
 
 
 @app.post("/runs/{run_id}/apply_chat_template", response_model=ApplyChatTemplateResponse)
@@ -1088,11 +1223,32 @@ async def apply_chat_template(
     user_id: str = Depends(verify_auth),
 ):
     """Apply the model's chat template to format messages."""
-    # TODO: Implement using stateful session
-    raise HTTPException(
-        status_code=501,
-        detail="This endpoint is temporarily unavailable during the stateful migration."
-    )
+    try:
+        # Verify run belongs to user
+        run = await get_authorized_run(run_id, user_id)
+        
+        # Get GPU config
+        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        
+        # Get stateful session
+        session = get_training_session(run_id, gpu_config=gpu_config)
+        
+        # Apply chat template
+        result = session.apply_chat_template.remote(
+            messages=request.messages,
+            add_generation_prompt=request.add_generation_prompt
+        )
+        
+        return ApplyChatTemplateResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception(f"Error in apply_chat_template for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to apply chat template. Please try again."
+        )
 
 
 @app.get("/runs/{run_id}/status", response_model=RunStatus)

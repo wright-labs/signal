@@ -238,14 +238,14 @@ class AsyncSignalClient:
     def __init__(
         self, 
         api_key: str, 
-        base_url: str = "https://api.frontier-signal.com", # TODO: is this the correct base url?
+        base_url: str = "https://signal-production-d2d8.up.railway.app",
         timeout: int = 300,
     ):
         """Initialize the async client.
         
         Args:
             api_key: API key for authentication
-            base_url: Base URL of the API server
+            base_url: Base URL of the API server (defaults to production Railway deployment)
             timeout: Request timeout in seconds (default: 300)
         """
         self.api_key = api_key

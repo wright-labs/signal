@@ -1,4 +1,8 @@
-"""S3 client for artifact storage with tenant isolation."""
+"""S3/R2 client for artifact storage with tenant isolation.
+
+Supports both AWS S3 and Cloudflare R2 (zero egress costs).
+R2 credentials take precedence if set, otherwise falls back to S3.
+"""
 import os
 import json
 from pathlib import Path
@@ -7,13 +11,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# TODO: please tell me there is a cheaper egress option than s3
-
 def get_s3_client():
-    """Initialize boto3 S3 client with credentials from environment."""
-    # Import here to avoid issues with local Modal CLI validation
+    """Initialize boto3 S3-compatible client with credentials from environment. Prefers R2 over S3."""
     import boto3
+        
+    r2_access_key = os.environ.get('R2_ACCESS_KEY_ID')
+    r2_secret_key = os.environ.get('R2_SECRET_ACCESS_KEY')
+    r2_endpoint = os.environ.get('R2_ENDPOINT_URL')
     
+    if r2_access_key and r2_secret_key and r2_endpoint:
+        logger.debug("Using Cloudflare R2 for storage")
+        return boto3.client(
+            's3',
+            endpoint_url=r2_endpoint,
+            aws_access_key_id=r2_access_key,
+            aws_secret_access_key=r2_secret_key,
+            region_name='auto',
+        )
+    
+    logger.debug("Using AWS S3 for storage")
     return boto3.client(
         's3',
         aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
@@ -23,10 +39,15 @@ def get_s3_client():
 
 
 def get_s3_bucket_name() -> str:
-    """Get S3 bucket name from environment."""
+    """Get S3/R2 bucket name from environment"""
+    bucket = os.environ.get('R2_BUCKET_NAME')
+    if bucket:
+        return bucket
+    
+    # Fall back to S3 bucket name
     bucket = os.environ.get('S3_BUCKET_NAME')
     if not bucket:
-        raise ValueError("S3_BUCKET_NAME environment variable not set")
+        raise ValueError("Neither R2_BUCKET_NAME nor S3_BUCKET_NAME environment variable is set")
     return bucket
 
 

@@ -26,7 +26,13 @@ VOLUME_CONFIG = {
 
 # Secrets
 huggingface_secret = Secret.from_name("secrets-hf-wandb")
+
+# S3/R2 secret should contain:
+# - For R2 (preferred): R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_ENDPOINT_URL
+# - For S3 (fallback): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, AWS_REGION
+# R2 credentials take precedence if both are set (zero egress costs)
 s3_secret = Secret.from_name("aws-s3-credentials")
+
 api_secret = Secret.from_name("signal-api-secrets")
 
 # Docker image configurations
@@ -86,14 +92,13 @@ TRAINING_IMAGE = (
     )
 )
 
-# TODO: wait check this one
 # Inference image - use same as training for simplicity
-# Previously tried vLLM but it caused OOM during build
-# The training image works fine for inference too
+# vLLM was tested but caused OOM issues during build
+# The training image works fine for both training and inference
 INFERENCE_IMAGE = TRAINING_IMAGE
 
-# TODO: also validate why this is imported at the end
 # Import training session classes to register stateful container classes
-# This must be at the end after all images and secrets are defined
+# This must be at the end after all images and secrets are defined to avoid circular imports
+# The training session classes need app, images, and secrets to be fully initialized first
 # import modal_runtime.training_session  # noqa: F401, E402  # Single class (disabled in favor of multi_gpu_session)
 import modal_runtime.multi_gpu_session  # noqa: F401, E402  # Multiple GPU config classes
