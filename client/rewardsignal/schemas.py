@@ -142,19 +142,6 @@ class TrainingExample(BaseModel):
                 "Provide only ONE format: SFT, DPO, GRPO, or PPO"
             )
 
-        # Validate format-specific requirements
-        if has_dpo:
-            # Check if any DPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
-
-        if has_grpo:
-            if len(self.responses) != len(self.rewards):
-                raise ValueError("Number of responses must match number of rewards for GRPO")
-
-        if has_ppo:
-            # Check if PPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
-
         return self
 
 
