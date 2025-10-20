@@ -26,16 +26,8 @@ VOLUME_CONFIG = {
 
 # Secrets
 huggingface_secret = Secret.from_name("secrets-hf-wandb")
-
-# S3/R2 secret should contain:
-# - For R2 (preferred): R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_ENDPOINT_URL
-# - For S3 (fallback): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, AWS_REGION
-# R2 credentials take precedence if both are set (zero egress costs)
 s3_secret = Secret.from_name("aws-s3-credentials")
-
 api_secret = Secret.from_name("signal-api-secrets")
-
-# Docker image configurations
 
 # CUDA configuration
 CUDA_VERSION = "12.8.1"
@@ -43,8 +35,7 @@ CUDA_FLAVOR = "devel"
 CUDA_OS = "ubuntu24.04"
 CUDA_TAG = f"{CUDA_VERSION}-{CUDA_FLAVOR}-{CUDA_OS}"
 
-# Training image with PyTorch, Transformers, PEFT for LoRA training
-# Streamlined to include only essential dependencies for transformers + PEFT
+# Training image with PyTorch, Transformers, PEFT, TRL for LoRA training
 TRAINING_IMAGE = (
     ModalImage.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
     .apt_install(
@@ -59,13 +50,14 @@ TRAINING_IMAGE = (
             "torchaudio",
         ]
     )
-    # Install transformers ecosystem and LoRA training dependencies
+    # Install transformers ecosystem, PEFT, TRL, and LoRA training dependencies
     .uv_pip_install(
         [
             "transformers",           # HuggingFace transformers
             "peft",                   # Parameter-Efficient Fine-Tuning (LoRA)
             "bitsandbytes",           # Quantization and 8-bit optimizer
             "accelerate",             # Training utilities
+            "trl",                    # Transformer Reinforcement Learning (DPO, PPO, etc.)
             "safetensors",            # Safe model serialization
             "sentencepiece",          # Tokenization
             "protobuf",               # Protocol buffers
@@ -93,12 +85,6 @@ TRAINING_IMAGE = (
 )
 
 # Inference image - use same as training for simplicity
-# vLLM was tested but caused OOM issues during build
-# The training image works fine for both training and inference
 INFERENCE_IMAGE = TRAINING_IMAGE
 
-# Import training session classes to register stateful container classes
-# This must be at the end after all images and secrets are defined to avoid circular imports
-# The training session classes need app, images, and secrets to be fully initialized first
-# import modal_runtime.training_session  # noqa: F401, E402  # Single class (disabled in favor of multi_gpu_session)
-import modal_runtime.multi_gpu_session  # noqa: F401, E402  # Multiple GPU config classes
+import modal_runtime.training_session  # Single class with Accelerate for multi-GPU
