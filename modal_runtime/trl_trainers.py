@@ -1,4 +1,5 @@
 """TRL trainer integration for RL algorithms."""
+
 from typing import Dict, Any, Optional, List, Callable
 from datasets import Dataset
 
@@ -18,7 +19,7 @@ def create_dpo_trainer(
 ):
     """Create DPO trainer with TRL."""
     from trl import DPOTrainer, DPOConfig
-    
+
     config = DPOConfig(
         learning_rate=learning_rate,
         beta=beta,
@@ -29,7 +30,7 @@ def create_dpo_trainer(
         logging_steps=logging_steps,
         remove_unused_columns=False,
     )
-    
+
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,  # TRL will create from model if None
@@ -37,7 +38,7 @@ def create_dpo_trainer(
         tokenizer=tokenizer,
         train_dataset=train_dataset,
     )
-    
+
     return trainer
 
 
@@ -52,9 +53,9 @@ def create_ppo_trainer(
     max_length: int = 512,
 ):
     """Create PPO trainer with TRL."""
-    
+
     from trl import PPOTrainer, PPOConfig
-    
+
     config = PPOConfig(
         learning_rate=learning_rate,
         batch_size=batch_size,
@@ -63,13 +64,13 @@ def create_ppo_trainer(
         ppo_epochs=ppo_epochs,
         max_length=max_length,
     )
-    
+
     trainer = PPOTrainer(
         config=config,
         model=model,
         tokenizer=tokenizer,
     )
-    
+
     return trainer
 
 
@@ -96,7 +97,7 @@ def create_grpo_trainer(
 ):
     """Create GRPO trainer with TRL."""
     from trl import GRPOTrainer, GRPOConfig
-    
+
     config = GRPOConfig(
         learning_rate=learning_rate,
         beta=beta,
@@ -117,7 +118,7 @@ def create_grpo_trainer(
         vllm_importance_sampling_correction=vllm_importance_sampling_correction,
         vllm_importance_sampling_cap=vllm_importance_sampling_cap,
     )
-    
+
     trainer = GRPOTrainer(
         model=model,
         config=config,
@@ -125,7 +126,7 @@ def create_grpo_trainer(
         train_dataset=train_dataset,
         reward_funcs=reward_funcs,
     )
-    
+
     return trainer
 
 
@@ -135,6 +136,7 @@ def get_soft_overlong_punishment(
 ) -> Callable:
     """Create soft overlong punishment reward function for DAPO."""
     from trl import get_soft_overlong_punishment as trl_sop
+
     return trl_sop(
         max_completion_len=max_completion_len,
         soft_punish_cache=soft_punish_cache,
@@ -153,7 +155,7 @@ def create_reward_trainer(
 ):
     """Create Reward Model trainer with TRL."""
     from trl import RewardTrainer, RewardConfig
-    
+
     config = RewardConfig(
         learning_rate=learning_rate,
         num_train_epochs=num_train_epochs,
@@ -161,14 +163,14 @@ def create_reward_trainer(
         gradient_accumulation_steps=gradient_accumulation_steps,
         logging_steps=logging_steps,
     )
-    
+
     trainer = RewardTrainer(
         model=model,
         tokenizer=tokenizer,
         config=config,
         train_dataset=train_dataset,
     )
-    
+
     return trainer
 
 
@@ -179,13 +181,15 @@ def prepare_dpo_dataset(
     prompts = [p["prompt"] for p in preference_pairs]
     chosen = [p["chosen"] for p in preference_pairs]
     rejected = [p["rejected"] for p in preference_pairs]
-    
-    dataset = Dataset.from_dict({
-        "prompt": prompts,
-        "chosen": chosen,
-        "rejected": rejected,
-    })
-    
+
+    dataset = Dataset.from_dict(
+        {
+            "prompt": prompts,
+            "chosen": chosen,
+            "rejected": rejected,
+        }
+    )
+
     return dataset
 
 
@@ -195,12 +199,14 @@ def prepare_reward_dataset(
     """Convert preference pairs to TRL Reward Model format."""
     chosen = [p["chosen"] for p in preference_pairs]
     rejected = [p["rejected"] for p in preference_pairs]
-    
-    dataset = Dataset.from_dict({
-        "chosen": chosen,
-        "rejected": rejected,
-    })
-    
+
+    dataset = Dataset.from_dict(
+        {
+            "chosen": chosen,
+            "rejected": rejected,
+        }
+    )
+
     return dataset
 
 
@@ -210,44 +216,46 @@ def format_chat_for_dpo(
     tokenizer,
 ) -> List[Dict[str, str]]:
     """Format chat-style preference pairs for DPO."""
-    if not hasattr(tokenizer, 'apply_chat_template'):
+    if not hasattr(tokenizer, "apply_chat_template"):
         raise ValueError("Tokenizer does not support chat templates")
-    
+
     formatted_pairs = []
-    
+
     for pair in preference_pairs:
         # Extract messages
         messages_chosen = pair["messages_chosen"]
         messages_rejected = pair["messages_rejected"]
-        
+
         # Separate prompt (user messages) from responses
         # Assume last message is assistant response
         prompt_messages = messages_chosen[:-1]
-        
+
         # Format prompt
         prompt = tokenizer.apply_chat_template(
             prompt_messages,
             tokenize=False,
             add_generation_prompt=True,
         )
-        
+
         # Format chosen and rejected (full conversations)
         chosen = tokenizer.apply_chat_template(
             messages_chosen,
             tokenize=False,
             add_generation_prompt=False,
         )
-        
+
         rejected = tokenizer.apply_chat_template(
             messages_rejected,
             tokenize=False,
             add_generation_prompt=False,
         )
-        
-        formatted_pairs.append({
-            "prompt": prompt,
-            "chosen": chosen,
-            "rejected": rejected,
-        })
-    
+
+        formatted_pairs.append(
+            {
+                "prompt": prompt,
+                "chosen": chosen,
+                "rejected": rejected,
+            }
+        )
+
     return formatted_pairs

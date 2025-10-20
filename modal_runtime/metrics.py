@@ -3,13 +3,14 @@
 This module provides simple metrics collection for training runs.
 Uses WandB for experiment tracking (already installed in app.py).
 """
+
 import time
 from typing import Dict, Any, Optional, List
 
 
 class MetricsCollector:
     """Simple metrics collector for training runs."""
-    
+
     def __init__(
         self,
         run_id: str,
@@ -20,26 +21,27 @@ class MetricsCollector:
         self.run_id = run_id
         self.user_id = user_id
         self.enable_wandb = enable_wandb
-        
+
         # WandB client (lazy-loaded)
         self._wandb = None
-        
+
         # Local metrics storage
         self.metrics_history: List[Dict[str, Any]] = []
-    
+
     @property
     def wandb(self):
         """Get WandB client (lazy-loaded)."""
         if self._wandb is None and self.enable_wandb:
             try:
                 import wandb
+
                 self._wandb = wandb
             except Exception as e:
                 print(f"Failed to import WandB: {e}")
                 self.enable_wandb = False
-        
+
         return self._wandb
-    
+
     def collect_training_metrics(
         self,
         loss: float,
@@ -56,17 +58,17 @@ class MetricsCollector:
             "learning_rate": learning_rate,
             "timestamp": time.time(),
         }
-        
+
         if extra_metrics:
             metrics_dict.update(extra_metrics)
-        
+
         # Log to WandB
         if self.wandb and self.enable_wandb:
             self.wandb.log(metrics_dict)
-        
+
         # Store locally
         self.metrics_history.append(metrics_dict)
-    
+
     def collect_rl_metrics(
         self,
         step: int,
@@ -82,7 +84,7 @@ class MetricsCollector:
             "step": step,
             "timestamp": time.time(),
         }
-        
+
         if policy_loss is not None:
             metrics_dict["rl/policy_loss"] = policy_loss
         if value_loss is not None:
@@ -93,18 +95,18 @@ class MetricsCollector:
             metrics_dict["rl/kl_divergence"] = kl_divergence
         if reward_mean is not None:
             metrics_dict["rl/reward_mean"] = reward_mean
-        
+
         if extra_metrics:
             for key, value in extra_metrics.items():
                 metrics_dict[f"rl/{key}"] = value
-        
+
         # Log to WandB
         if self.wandb and self.enable_wandb:
             self.wandb.log(metrics_dict)
-        
+
         # Store locally
         self.metrics_history.append(metrics_dict)
-    
+
     def collect_performance_metrics(
         self,
         forward_backward_duration_ms: Optional[float] = None,
@@ -116,7 +118,7 @@ class MetricsCollector:
         metrics_dict = {
             "timestamp": time.time(),
         }
-        
+
         if forward_backward_duration_ms is not None:
             metrics_dict["perf/forward_backward_ms"] = forward_backward_duration_ms
         if optim_step_duration_ms is not None:
@@ -125,11 +127,11 @@ class MetricsCollector:
             metrics_dict["perf/gpu_utilization"] = gpu_utilization
         if gpu_memory_used_gb is not None:
             metrics_dict["perf/gpu_memory_gb"] = gpu_memory_used_gb
-        
+
         # Log to WandB
         if self.wandb and self.enable_wandb:
             self.wandb.log(metrics_dict)
-    
+
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Get summary of collected metrics."""
         if not self.metrics_history:
@@ -138,7 +140,7 @@ class MetricsCollector:
                 "first_timestamp": None,
                 "last_timestamp": None,
             }
-        
+
         return {
             "num_metrics": len(self.metrics_history),
             "first_timestamp": self.metrics_history[0]["timestamp"],

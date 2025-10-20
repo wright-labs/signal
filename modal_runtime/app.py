@@ -6,12 +6,13 @@ This module defines:
 - Persistent volumes for data storage
 - Secrets for API keys and credentials
 """
+
 from modal import App, Image as ModalImage, Volume, Secret
 from pathlib import Path
 
 # Configuration
 
-HOURS = 60 * 60 # this is the default timeout for the modal app
+HOURS = 60 * 60  # this is the default timeout for the modal app
 
 # Modal app, volumes, and secrets
 
@@ -46,35 +47,35 @@ TRAINING_IMAGE = (
     .uv_pip_install(
         [
             "torch",
-            "torchvision", 
+            "torchvision",
             "torchaudio",
         ]
     )
     # Install transformers ecosystem, PEFT, TRL, and LoRA training dependencies
     .uv_pip_install(
         [
-            "transformers",           # HuggingFace transformers
-            "peft",                   # Parameter-Efficient Fine-Tuning (LoRA)
-            "bitsandbytes",           # Quantization and 8-bit optimizer
-            "accelerate",             # Training utilities
-            "trl",                    # Transformer Reinforcement Learning (DPO, PPO, etc.)
-            "safetensors",            # Safe model serialization
-            "sentencepiece",          # Tokenization
-            "protobuf",               # Protocol buffers
-            "datasets",               # HuggingFace datasets
-            "nvidia-ml-py3",          # GPU monitoring (pynvml)
-            "wandb",                  # Experiment tracking
-            "boto3",                  # AWS S3 for artifact storage
-            "botocore",               # AWS core library
-            "hf_transfer",            # Fast HuggingFace downloads
+            "transformers",  # HuggingFace transformers
+            "peft",  # Parameter-Efficient Fine-Tuning (LoRA)
+            "bitsandbytes",  # Quantization and 8-bit optimizer
+            "accelerate",  # Training utilities
+            "trl",  # Transformer Reinforcement Learning (DPO, PPO, etc.)
+            "safetensors",  # Safe model serialization
+            "sentencepiece",  # Tokenization
+            "protobuf",  # Protocol buffers
+            "datasets",  # HuggingFace datasets
+            "nvidia-ml-py3",  # GPU monitoring (pynvml)
+            "wandb",  # Experiment tracking
+            "boto3",  # AWS S3 for artifact storage
+            "botocore",  # AWS core library
+            "hf_transfer",  # Fast HuggingFace downloads
         ]
     )
     # Set environment variables for optimization
     .env(
         {
             "HF_HUB_ENABLE_HF_TRANSFER": "1",  # Faster HF downloads
-            "HF_HOME": "/data/.cache",         # Cache models on volume
-            "PYTHONPATH": "/root",             # For local module imports
+            "HF_HOME": "/data/.cache",  # Cache models on volume
+            "PYTHONPATH": "/root",  # For local module imports
         }
     )
     # Add modal_runtime as a local directory for imports
@@ -86,4 +87,3 @@ TRAINING_IMAGE = (
 
 # Inference image - use same as training for simplicity
 INFERENCE_IMAGE = TRAINING_IMAGE
-

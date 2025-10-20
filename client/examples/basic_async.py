@@ -3,6 +3,7 @@
 import asyncio
 from rewardsignal import AsyncSignalClient
 
+
 async def main():
     # Use async context manager for automatic cleanup
     async with AsyncSignalClient(
@@ -13,7 +14,7 @@ async def main():
         print("Fetching available models...")
         models = await client.list_models()
         print(f"Available models: {models}\n")
-        
+
         # Create a training run
         print("Creating training run...")
         run = await client.create_run(
@@ -24,39 +25,39 @@ async def main():
             max_seq_length=2048,
         )
         print(f"Created run: {run.run_id}\n")
-        
+
         # Prepare training data with chat format
         batch = [
             {
                 "messages": [
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "What is machine learning?"},
-                    {"role": "assistant", "content": "Machine learning is a subset of AI..."}
+                    {"role": "assistant", "content": "Machine learning is a subset of AI..."},
                 ]
             },
             {
                 "messages": [
                     {"role": "user", "content": "Explain Python in simple terms."},
-                    {"role": "assistant", "content": "Python is a popular programming language..."}
+                    {"role": "assistant", "content": "Python is a popular programming language..."},
                 ]
             },
         ]
-        
+
         # Training loop
         print("Starting training...")
         num_steps = 10
-        
+
         for step in range(num_steps):
             # Forward-backward pass
             result = await run.forward_backward(batch=batch)
-            loss = result['loss']
-            grad_norm = result.get('grad_norm', 'N/A')
-            
+            loss = result["loss"]
+            grad_norm = result.get("grad_norm", "N/A")
+
             print(f"Step {step + 1}/{num_steps}: Loss = {loss:.4f}, Grad Norm = {grad_norm}")
-            
+
             # Optimizer step
-            optim_result = await run.optim_step()
-            
+            await run.optim_step()
+
             # Sample from model every 3 steps
             if (step + 1) % 3 == 0:
                 print("\nGenerating sample...")
@@ -66,18 +67,18 @@ async def main():
                     temperature=0.7,
                 )
                 print(f"Sample output: {samples['outputs'][0]}\n")
-        
+
         # Get final status
         print("\nFetching run status...")
         status = await run.get_status()
         print(f"Run status: {status['status']}")
         print(f"Current step: {status['current_step']}")
-        
+
         # Get metrics
         print("\nFetching metrics...")
         metrics = await run.get_metrics()
         print(f"Metrics count: {len(metrics.get('metrics', []))}")
-        
+
         # Save final model
         print("\nSaving model state...")
         artifact = await run.save_state(
@@ -86,8 +87,9 @@ async def main():
         )
         print(f"Model saved to: {artifact['checkpoint_path']}")
         print(f"Artifact URI: {artifact['artifact_uri']}")
-        
+
         print("\nTraining complete!")
+
 
 if __name__ == "__main__":
     try:

@@ -1,16 +1,18 @@
 """Test full training loop with stateful container."""
+
 import modal
 import time
+
 
 def test_full_training_loop():
     """Test complete training workflow."""
     print("=" * 80)
     print("TESTING FULL TRAINING LOOP")
     print("=" * 80)
-    
+
     TrainingSession = modal.Cls.lookup("signal", "TrainingSession")
     session = TrainingSession()
-    
+
     # 1. Initialize
     print("\n1. Initializing...")
     init_result = session.initialize.remote(
@@ -24,34 +26,36 @@ def test_full_training_loop():
     assert init_result["status"] == "success", "Initialize failed"
     print(f"   ✓ Initialized at step {init_result['current_step']}")
     print(f"   ✓ Trainable params: {init_result['trainable_params']:,}")
-    
+
     # 2. Train for 20 steps
     print("\n2. Training for 20 steps...")
     batch = [{"text": "The quick brown fox jumps over the lazy dog. " * 10}]
-    
+
     losses = []
     for i in range(20):
         # Forward-backward
         fb_result = session.forward_backward.remote(batch_data=batch)
         assert fb_result["status"] == "success", f"Forward-backward failed at step {i}"
-        
+
         # Optim step
         opt_result = session.optim_step.remote()
         assert opt_result["status"] == "success", f"Optimizer step failed at step {i}"
-        
-        losses.append(fb_result['loss'])
-        
+
+        losses.append(fb_result["loss"])
+
         # Print every 5 steps
         if (i + 1) % 5 == 0:
-            print(f"   Step {opt_result['step']}: loss={fb_result['loss']:.4f}, lr={opt_result['learning_rate']:.6f}")
-            
+            print(
+                f"   Step {opt_result['step']}: loss={fb_result['loss']:.4f}, lr={opt_result['learning_rate']:.6f}"
+            )
+
             # Check auto-checkpoint
-            if opt_result.get('checkpoint_saved'):
+            if opt_result.get("checkpoint_saved"):
                 print(f"   ✓ Auto-checkpoint saved at step {opt_result['step']}")
-    
+
     print("   ✓ Completed 20 training steps")
     print(f"   ✓ Loss decreased: {losses[0]:.4f} → {losses[-1]:.4f}")
-    
+
     # 3. Sample from model
     print("\n3. Generating samples...")
     sample_result = session.sample.remote(
@@ -61,16 +65,16 @@ def test_full_training_loop():
     )
     assert sample_result["status"] == "success", "Sampling failed"
     print(f"   ✓ Generated {len(sample_result['outputs'])} completions")
-    for i, output in enumerate(sample_result['outputs']):
-        print(f"   [{i+1}] {output[:80]}...")
-    
+    for i, output in enumerate(sample_result["outputs"]):
+        print(f"   [{i + 1}] {output[:80]}...")
+
     # 4. Save state
     print("\n4. Saving state...")
     save_result = session.save_state.remote(mode="adapter")
     assert save_result["status"] == "success", "Save state failed"
     print(f"   ✓ Saved to: {save_result['local_path']}")
     print(f"   ✓ Step: {save_result['step']}")
-    
+
     # 5. Get final state
     print("\n5. Checking final state...")
     state = session.get_state.remote()
@@ -79,23 +83,23 @@ def test_full_training_loop():
     print(f"   ✓ Final step: {state['current_step']}")
     print(f"   ✓ Last checkpoint: {state['last_checkpoint_step']}")
     print("   ✓ Session active")
-    
+
     # 6. Continue training (test warm state)
     print("\n6. Continue training (warm state)...")
     start = time.time()
     fb_result = session.forward_backward.remote(batch_data=batch)
     opt_result = session.optim_step.remote()
     warm_time = time.time() - start
-    
-    assert opt_result['step'] == 21, f"Expected step 21, got {opt_result['step']}"
+
+    assert opt_result["step"] == 21, f"Expected step 21, got {opt_result['step']}"
     print(f"   ✓ Warm iteration completed in {warm_time:.2f}s")
     print(f"   ✓ Step 21: loss={fb_result['loss']:.4f}")
-    
+
     if warm_time < 10:
         print("   ✅ SUCCESS: Warm iteration is fast (<10s)!")
     else:
         print(f"   ⚠️  WARNING: Warm iteration took {warm_time:.2f}s (expected <10s)")
-    
+
     print("\n" + "=" * 80)
     print("✅ FULL TRAINING LOOP TEST PASSED!")
     print("=" * 80)
@@ -117,6 +121,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         raise
-

@@ -1,4 +1,5 @@
 """Quick test of stateful training session."""
+
 import modal
 import time
 
@@ -102,4 +103,3 @@ else:
 
 print("\n✅ All tests passed!")
 print("=" * 80)
-

@@ -34,19 +34,19 @@ from .futures import APIFuture
 
 class AsyncSignalRun:
     """Represents a training run with convenient async methods."""
-    
+
     def __init__(self, client: "AsyncSignalClient", run_id: str, config: Dict[str, Any]):
         """Initialize a training run."""
         self.client = client
         self.run_id = run_id
         self.config = config
-    
+
     async def forward_backward(
         self,
         batch: List[Dict[str, Any]],
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
-        **loss_kwargs
+        **loss_kwargs,
     ) -> ForwardBackwardResponse:
         """Perform forward-backward pass (blocking)."""
         return await self.client.forward_backward(
@@ -56,7 +56,7 @@ class AsyncSignalRun:
             loss_fn=loss_fn,
             loss_kwargs=loss_kwargs,
         )
-    
+
     async def optim_step(
         self,
         learning_rate: Optional[float] = None,
@@ -66,7 +66,7 @@ class AsyncSignalRun:
             run_id=self.run_id,
             learning_rate=learning_rate,
         )
-    
+
     async def sample(
         self,
         prompts: List[str],
@@ -84,7 +84,7 @@ class AsyncSignalRun:
             top_p=top_p,
             return_logprobs=return_logprobs,
         )
-    
+
     async def save_state(
         self,
         mode: Literal["adapter", "merged"] = "adapter",
@@ -98,13 +98,13 @@ class AsyncSignalRun:
             push_to_hub=push_to_hub,
             hub_model_id=hub_model_id,
         )
-    
+
     async def forward_backward_async(
         self,
         batch: List[Dict[str, Any]],
         accumulate: bool = False,
         loss_fn: str = "causal_lm",
-        **loss_kwargs
+        **loss_kwargs,
     ) -> APIFuture:
         """Perform forward-backward pass (async)."""
         return await self.client.forward_backward_async(
@@ -114,7 +114,7 @@ class AsyncSignalRun:
             loss_fn=loss_fn,
             loss_kwargs=loss_kwargs,
         )
-    
+
     async def optim_step_async(
         self,
         learning_rate: Optional[float] = None,
@@ -124,7 +124,7 @@ class AsyncSignalRun:
             run_id=self.run_id,
             learning_rate=learning_rate,
         )
-    
+
     async def sample_async(
         self,
         prompts: List[str],
@@ -142,7 +142,7 @@ class AsyncSignalRun:
             top_p=top_p,
             return_logprobs=return_logprobs,
         )
-    
+
     async def save_state_async(
         self,
         mode: Literal["adapter", "merged"] = "adapter",
@@ -156,15 +156,15 @@ class AsyncSignalRun:
             push_to_hub=push_to_hub,
             hub_model_id=hub_model_id,
         )
-    
+
     async def get_status(self) -> RunStatus:
         """Get run status."""
         return await self.client.get_run_status(self.run_id)
-    
+
     async def get_metrics(self) -> RunMetrics:
         """Get run metrics."""
         return await self.client.get_run_metrics(self.run_id)
-    
+
     async def tokenize(
         self,
         text: str | List[str],
@@ -176,7 +176,7 @@ class AsyncSignalRun:
             text=text,
             add_special_tokens=add_special_tokens,
         )
-    
+
     async def detokenize(
         self,
         token_ids: List[int] | List[List[int]],
@@ -186,15 +186,15 @@ class AsyncSignalRun:
             run_id=self.run_id,
             token_ids=token_ids,
         )
-    
+
     async def get_tokenizer_info(self) -> TokenizerInfoResponse:
         """Get tokenizer configuration information."""
         return await self.client.get_tokenizer_info(self.run_id)
-    
+
     async def get_model_info(self) -> ModelInfoResponse:
         """Get model architecture information."""
         return await self.client.get_model_info(self.run_id)
-    
+
     async def apply_chat_template(
         self,
         messages: List[Dict[str, str]],
@@ -210,10 +210,10 @@ class AsyncSignalRun:
 
 class AsyncSignalClient:
     """Asynchronous client for Signal API."""
-    
+
     def __init__(
-        self, 
-        api_key: str, 
+        self,
+        api_key: str,
         base_url: str = "https://signal-production-d2d8.up.railway.app",
         timeout: int = 300,
     ):
@@ -222,7 +222,7 @@ class AsyncSignalClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         self._client = httpx.AsyncClient(
@@ -233,17 +233,17 @@ class AsyncSignalClient:
             timeout=self.timeout,
         )
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.close()
-    
+
     async def close(self):
         """Close the client."""
         if self._client:
             await self._client.aclose()
             self._client = None
-    
+
     def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
         if self._client is None:
@@ -255,7 +255,7 @@ class AsyncSignalClient:
                 timeout=self.timeout,
             )
         return self._client
-    
+
     def _handle_error(self, response: httpx.Response) -> None:
         """Handle error responses."""
         # Parse error data once, default to None if parsing fails
@@ -265,9 +265,9 @@ class AsyncSignalClient:
             error_msg = error_data.get("detail") or error_data.get("error", response.text)
         except Exception:
             error_msg = response.text or f"HTTP {response.status_code} error"
-        
+
         status_code = response.status_code
-        
+
         if status_code == 401:
             raise AuthenticationError(error_msg, response_data=error_data)
         elif status_code == 403:
@@ -282,7 +282,7 @@ class AsyncSignalClient:
             raise ServerError(error_msg, status_code=status_code, response_data=error_data)
         else:
             raise SignalAPIError(error_msg, status_code=status_code, response_data=error_data)
-    
+
     async def _request(
         self,
         method: str,
@@ -292,11 +292,11 @@ class AsyncSignalClient:
         """Make a request to the API."""
         url = f"{self.base_url}{endpoint}"
         client = self._get_client()
-        
+
         try:
             response = await client.request(
-                method, 
-                url, 
+                method,
+                url,
                 json=json,
             )
         except httpx.TimeoutException:
@@ -305,17 +305,17 @@ class AsyncSignalClient:
             raise SignalConnectionError(f"Failed to connect to {url}: {str(e)}")
         except httpx.RequestError as e:
             raise SignalAPIError(f"Request failed: {str(e)}")
-        
+
         if response.status_code >= 400:
             self._handle_error(response)
-        
+
         return response.json()
-    
+
     async def list_models(self) -> List[str]:
         """List available models."""
         response = await self._request("GET", "/models")
         return response["models"]
-    
+
     async def create_run(
         self,
         base_model: str,
@@ -344,16 +344,16 @@ class AsyncSignalClient:
             bf16=bf16,
             gradient_checkpointing=gradient_checkpointing,
         )
-        
+
         response_data = await self._request("POST", "/runs", json=config.model_dump())
         response = RunResponse(**response_data)
-        
+
         return AsyncSignalRun(
             client=self,
             run_id=response.run_id,
             config=response.config,
         )
-    
+
     async def forward_backward(
         self,
         run_id: str,
@@ -365,17 +365,19 @@ class AsyncSignalClient:
         """Perform forward-backward pass."""
         if loss_kwargs is None:
             loss_kwargs = {}
-            
+
         payload = {
             "batch_data": batch,
             "accumulate": accumulate,
             "loss_fn": loss_fn,
             "loss_kwargs": loss_kwargs,
         }
-        
-        response_data = await self._request("POST", f"/runs/{run_id}/forward_backward", json=payload)
+
+        response_data = await self._request(
+            "POST", f"/runs/{run_id}/forward_backward", json=payload
+        )
         return ForwardBackwardResponse(**response_data)
-    
+
     async def forward_backward_async(
         self,
         run_id: str,
@@ -387,17 +389,19 @@ class AsyncSignalClient:
         """Perform forward-backward pass (async)."""
         if loss_kwargs is None:
             loss_kwargs = {}
-            
+
         payload = {
             "batch_data": batch,
             "accumulate": accumulate,
             "loss_fn": loss_fn,
             "loss_kwargs": loss_kwargs,
         }
-        
-        response_data = await self._request("POST", f"/runs/{run_id}/forward_backward_async", json=payload)
+
+        response_data = await self._request(
+            "POST", f"/runs/{run_id}/forward_backward_async", json=payload
+        )
         return APIFuture(client=self, future_id=response_data["future_id"])
-    
+
     async def optim_step_async(
         self,
         run_id: str,
@@ -407,10 +411,12 @@ class AsyncSignalClient:
         payload = {
             "learning_rate": learning_rate,
         }
-        
-        response_data = await self._request("POST", f"/runs/{run_id}/optim_step_async", json=payload)
+
+        response_data = await self._request(
+            "POST", f"/runs/{run_id}/optim_step_async", json=payload
+        )
         return APIFuture(client=self, future_id=response_data["future_id"])
-    
+
     async def sample(
         self,
         run_id: str,
@@ -428,10 +434,10 @@ class AsyncSignalClient:
             "top_p": top_p,
             "return_logprobs": return_logprobs,
         }
-        
+
         response_data = await self._request("POST", f"/runs/{run_id}/sample", json=payload)
         return SampleResponse(**response_data)
-    
+
     async def sample_async(
         self,
         run_id: str,
@@ -449,10 +455,10 @@ class AsyncSignalClient:
             "top_p": top_p,
             "return_logprobs": return_logprobs,
         }
-        
+
         response = await self._request("POST", f"/runs/{run_id}/sample_async", json=payload)
         return APIFuture(client=self, future_id=response["future_id"])
-    
+
     async def save_state(
         self,
         run_id: str,
@@ -466,10 +472,10 @@ class AsyncSignalClient:
             "push_to_hub": push_to_hub,
             "hub_model_id": hub_model_id,
         }
-        
+
         response_data = await self._request("POST", f"/runs/{run_id}/save_state", json=payload)
         return SaveStateResponse(**response_data)
-    
+
     async def save_state_async(
         self,
         run_id: str,
@@ -483,25 +489,25 @@ class AsyncSignalClient:
             "push_to_hub": push_to_hub,
             "hub_model_id": hub_model_id,
         }
-        
+
         response = await self._request("POST", f"/runs/{run_id}/save_state_async", json=payload)
         return APIFuture(client=self, future_id=response["future_id"])
-    
+
     async def get_run_status(self, run_id: str) -> RunStatus:
         """Get run status."""
         response_data = await self._request("GET", f"/runs/{run_id}/status")
         return RunStatus(**response_data)
-    
+
     async def get_run_metrics(self, run_id: str) -> RunMetrics:
         """Get run metrics."""
         response_data = await self._request("GET", f"/runs/{run_id}/metrics")
         return RunMetrics(**response_data)
-    
+
     async def list_runs(self) -> List[RunResponse]:
         """List all runs."""
         response_data = await self._request("GET", "/runs")
         return [RunResponse(**run) for run in response_data["runs"]]
-    
+
     async def tokenize(
         self,
         run_id: str,
@@ -515,7 +521,7 @@ class AsyncSignalClient:
             json={"text": text, "add_special_tokens": add_special_tokens},
         )
         return TokenizeResponse(**response_data)
-    
+
     async def detokenize(
         self,
         run_id: str,
@@ -528,17 +534,17 @@ class AsyncSignalClient:
             json={"token_ids": token_ids},
         )
         return DetokenizeResponse(**response_data)
-    
+
     async def get_tokenizer_info(self, run_id: str) -> TokenizerInfoResponse:
         """Get tokenizer configuration information."""
         response_data = await self._request("GET", f"/runs/{run_id}/tokenizer_info")
         return TokenizerInfoResponse(**response_data)
-    
+
     async def get_model_info(self, run_id: str) -> ModelInfoResponse:
         """Get model architecture information."""
         response_data = await self._request("GET", f"/runs/{run_id}/model_info")
         return ModelInfoResponse(**response_data)
-    
+
     async def apply_chat_template(
         self,
         run_id: str,
