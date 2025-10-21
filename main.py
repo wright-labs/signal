@@ -222,8 +222,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-# AUTHENTICATION
-
+# AUTHENTICATIONs
 
 async def verify_auth(
     authorization: Optional[str] = Header(None), request: Request = None
@@ -771,7 +770,7 @@ async def create_run(
             )
 
         # Fetch user integrations from Frontier Backend
-        await frontier_client.get_integrations(user_id)
+        integrations = await frontier_client.get_integrations(user_id)
         
         # Create run in registry
         run_id = run_registry.create_run(
@@ -804,6 +803,7 @@ async def create_run(
                 load_in_4bit=True,
                 accumulation_steps=1,
                 auto_checkpoint_interval=100,
+                integrations=integrations,
             )
 
             # Update registry to running status ONLY if Modal succeeds

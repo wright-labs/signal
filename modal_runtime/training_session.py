@@ -62,6 +62,8 @@ class TrainingSession:
     last_activity_time: float = None
     should_monitor: bool = False
     monitor_thread: threading.Thread = None
+    wandb_run: Any = None
+    last_loss: float = 0.0
 
     @modal.enter()
     def container_startup(self):
@@ -127,6 +129,15 @@ class TrainingSession:
 
         torch.cuda.empty_cache()
         print("✓ GPU memory cleaned up")
+        
+        # Finish WandB run if active
+        if self.wandb_run:
+            try:
+                self.wandb_run.finish()
+                print("✓ WandB run finished")
+            except Exception as e:
+                print(f"⚠ Failed to finish WandB run: {e}")
+        
         print("✓ Container shutdown complete")
 
     @modal.method()
@@ -150,6 +161,7 @@ class TrainingSession:
         resume_from_step: Optional[int] = None,
         accumulation_steps: int = 1,
         auto_checkpoint_interval: int = 100,
+        integrations: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Initialize training session.
 
@@ -212,6 +224,34 @@ class TrainingSession:
                 "accumulation_steps": accumulation_steps,
                 "auto_checkpoint_interval": auto_checkpoint_interval,
             }
+
+            # Initialize WandB if credentials provided
+            if integrations and integrations.get("wandb"):
+                try:
+                    import wandb
+                    import os
+                    from datetime import datetime
+                    
+                    # Create experiment name: model_datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    experiment_name = f"{base_model.replace('/', '_')}_{timestamp}"
+                    
+                    # Initialize WandB
+                    os.environ["WANDB_API_KEY"] = integrations["wandb"]
+                    self.wandb_run = wandb.init(
+                        project="signal-training",
+                        name=experiment_name,
+                        config=self.config,
+                        resume="allow",
+                        id=run_id,  # Use run_id for resume capability
+                    )
+                    print(f"✓ WandB initialized: {experiment_name}")
+                except Exception as e:
+                    print(f"⚠ Failed to initialize WandB: {e}")
+                    self.wandb_run = None
+            else:
+                self.wandb_run = None
+                print("ℹ WandB not configured (no API key)")
 
             # Check if resuming from checkpoint
             if resume_from_step is not None:
@@ -430,6 +470,9 @@ class TrainingSession:
                 if isinstance(grad_norm, float)
                 else grad_norm.item(),
             }
+            
+            # Store loss for WandB logging in optim_step
+            self.last_loss = metrics["loss"]
 
             print(f"\n{'=' * 80}")
             print("✓ FORWARD-BACKWARD COMPLETE")
@@ -511,6 +554,17 @@ class TrainingSession:
                 checkpoint_saved = True
 
             current_lr = self.optimizer.param_groups[0]["lr"]
+            
+            # Log to WandB if initialized
+            if self.wandb_run:
+                try:
+                    self.wandb_run.log({
+                        "train/loss": self.last_loss,
+                        "train/learning_rate": current_lr,
+                        "train/step": self.current_step,
+                    })
+                except Exception as e:
+                    print(f"⚠ Failed to log to WandB: {e}")
 
             print(f"\n{'=' * 80}")
             print("✓ OPTIMIZER STEP COMPLETE")
@@ -540,13 +594,7 @@ class TrainingSession:
         top_k: Optional[int] = None,
         return_logprobs: bool = False,
     ) -> Dict[str, Any]:
-        """Generate text samples.
-
-        This uses the already-loaded model from initialize().
-
-        Returns:
-            Dict with generated outputs
-        """
+        """Generate text samples."""
         try:
             self._update_activity()
 
@@ -1079,3 +1127,19 @@ class TrainingSession:
                     print(f"[Background] Auto-checkpoint failed: {e}")
 
         print("Background monitor thread stopped")
+
+
+# GPU-specific class aliases
+# For now, all GPU configs use the same TrainingSession class
+# Modal will allocate GPUs based on availability
+# TODO: Create properly separate classes if we need GPU-specific optimizations
+
+TrainingSession_L40S_1 = TrainingSession
+TrainingSession_L40S_2 = TrainingSession  
+TrainingSession_L40S_4 = TrainingSession
+TrainingSession_A100_80GB_1 = TrainingSession
+TrainingSession_A100_80GB_2 = TrainingSession
+TrainingSession_A100_80GB_4 = TrainingSession
+TrainingSession_A100_80GB_8 = TrainingSession
+TrainingSession_H100_1 = TrainingSession
+TrainingSession_H100_4 = TrainingSession

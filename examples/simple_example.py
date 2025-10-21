@@ -1,8 +1,13 @@
-from client.rewardsignal import SignalClient
+from rewardsignal import SignalClient
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+API_KEY = os.getenv("API_KEY")
 
 def main():
-    client = SignalClient(api_key="sk-...")
+    client = SignalClient(api_key=API_KEY)
     run = client.create_run(
         base_model="meta-llama/Llama-3.2-3B",
         lora_r=32,
