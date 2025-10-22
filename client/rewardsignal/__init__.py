@@ -8,11 +8,12 @@ from .client import SignalClient, SignalRun
 # Specialized clients
 from .training_client import TrainingClient
 from .inference_client import InferenceClient
-from .async_training_client import AsyncTrainingClient
-from .async_inference_client import AsyncInferenceClient
 
 # Async client
 from .async_client import AsyncSignalClient, AsyncSignalRun
+
+# Futures
+from .futures import APIFuture, FutureGroup
 
 # Exceptions
 from .exceptions import (
@@ -54,11 +55,12 @@ __all__ = [
     # Specialized clients
     "TrainingClient",
     "InferenceClient",
-    "AsyncTrainingClient",
-    "AsyncInferenceClient",
     # Async client
     "AsyncSignalClient",
     "AsyncSignalRun",
+    # Futures
+    "APIFuture",
+    "FutureGroup",
     # Exceptions
     "SignalAPIError",
     "AuthenticationError",

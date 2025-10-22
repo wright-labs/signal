@@ -1,4 +1,5 @@
 """Quick test of stateful training session."""
+
 import modal
 import time
 
@@ -78,7 +79,7 @@ print(f"   Generated: {sample_result['outputs'][0][:100]}...")
 # Test get_state
 print("\n6. Testing get_state...")
 state = session.get_state.remote()
-print(f"✓ State retrieved")
+print("✓ State retrieved")
 print(f"   Status: {state['status']}")
 print(f"   Current step: {state['current_step']}")
 print(f"   Last checkpoint step: {state['last_checkpoint_step']}")
@@ -102,4 +103,3 @@ else:
 
 print("\n✅ All tests passed!")
 print("=" * 80)
-

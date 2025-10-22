@@ -3,9 +3,8 @@
 This test creates a tiny training run with a very small model to verify
 that all the core primitives work correctly.
 """
-import os
+
 import sys
-import time
 from pathlib import Path
 
 # Add parent directory to path
@@ -27,41 +26,40 @@ from modal_runtime.primitives import (
 
 def test_modal_primitives_e2e():
     """Test all Modal primitives end-to-end with a small model."""
-    
-    print("\n" + "="*80)
+
+    print("\n" + "=" * 80)
     print("Signal E2E Test - Modal Primitives")
-    print("="*80 + "\n")
-    
+    print("=" * 80 + "\n")
+
     # Setup
     registry = RunRegistry()
     model_registry = ModelRegistry()
-    
+
     # Use a very small model for testing
     test_model = "meta-llama/Llama-3.2-1B"
     test_user_id = "00000000-0000-0000-0000-000000000001"  # Test user
-    
+
     # Ensure test user profile exists
     supabase = get_supabase()
     try:
-        supabase.table("profiles").upsert({
-            "id": test_user_id,
-            "email": "test@signal.dev"
-        }).execute()
+        supabase.table("profiles").upsert(
+            {"id": test_user_id, "email": "test@signal.dev"}
+        ).execute()
         print("✓ Test user profile created/verified")
     except Exception as e:
         print(f"Note: Profile may already exist: {e}")
-    
+
     print(f"\n1. Testing with model: {test_model}")
-    
+
     # Get model config
     model_config = model_registry.get_model(test_model)
     if not model_config:
         print(f"❌ Model {test_model} not found in registry")
         return False
-    
+
     print(f"   Framework: {model_config['framework']}")
     print(f"   GPU: {model_config['gpu']}")
-    
+
     # Create run in registry
     print("\n2. Creating run in registry...")
     run_id = registry.create_run(
@@ -72,10 +70,10 @@ def test_modal_primitives_e2e():
             "lora_alpha": 16,
             "learning_rate": 3e-4,
             "max_seq_length": 512,  # Short sequence for testing
-        }
+        },
     )
     print(f"   ✓ Created run: {run_id}")
-    
+
     # Test 1: Create run on Modal
     print("\n3. Testing create_run (Modal)...")
     try:
@@ -97,16 +95,16 @@ def test_modal_primitives_e2e():
             gradient_checkpointing=True,
             integrations={},  # No integrations for test
         )
-        print(f"   ✓ Modal create_run successful")
+        print("   ✓ Modal create_run successful")
         print(f"   Status: {result['status']}")
-        
+
         # Update registry
         registry.update_run(run_id, status="running")
     except Exception as e:
         print(f"   ❌ Modal create_run failed: {e}")
         registry.delete_run(run_id, test_user_id)
         return False
-    
+
     # Test 2: Forward-backward pass
     print("\n4. Testing forward_backward (Modal)...")
     try:
@@ -115,7 +113,7 @@ def test_modal_primitives_e2e():
             {"text": "The quick brown fox jumps over the lazy dog."},
             {"text": "Hello world, this is a test."},
         ]
-        
+
         result = modal_forward_backward.remote(
             user_id=test_user_id,
             run_id=run_id,
@@ -125,20 +123,23 @@ def test_modal_primitives_e2e():
             loss_fn="causal_lm",
             loss_kwargs={},
         )
-        print(f"   ✓ Forward-backward successful")
+        print("   ✓ Forward-backward successful")
         print(f"   Loss: {result['loss']:.4f}")
         print(f"   Grad norm: {result.get('grad_norm', 'N/A')}")
-        
+
         # Update metrics
-        registry.update_run(run_id, metrics={
-            "loss": result['loss'],
-            "grad_norm": result.get('grad_norm'),
-        })
+        registry.update_run(
+            run_id,
+            metrics={
+                "loss": result["loss"],
+                "grad_norm": result.get("grad_norm"),
+            },
+        )
     except Exception as e:
         print(f"   ❌ Forward-backward failed: {e}")
         registry.delete_run(run_id, test_user_id)
         return False
-    
+
     # Test 3: Optimizer step
     print("\n5. Testing optim_step (Modal)...")
     try:
@@ -148,17 +149,17 @@ def test_modal_primitives_e2e():
             step=0,
             learning_rate=3e-4,
         )
-        print(f"   ✓ Optimizer step successful")
+        print("   ✓ Optimizer step successful")
         print(f"   Step: {result['step']}")
         print(f"   Learning rate: {result['learning_rate']}")
-        
+
         # Update step
-        registry.update_run(run_id, current_step=result['step'])
+        registry.update_run(run_id, current_step=result["step"])
     except Exception as e:
         print(f"   ❌ Optimizer step failed: {e}")
         registry.delete_run(run_id, test_user_id)
         return False
-    
+
     # Test 4: Sample from model
     print("\n6. Testing sample (Modal)...")
     try:
@@ -172,12 +173,12 @@ def test_modal_primitives_e2e():
             top_p=0.9,
             return_logprobs=False,
         )
-        print(f"   ✓ Sampling successful")
+        print("   ✓ Sampling successful")
         print(f"   Output: {result['outputs'][0][:100]}...")
     except Exception as e:
         print(f"   ❌ Sampling failed: {e}")
         # Not critical, continue
-    
+
     # Test 5: Save state
     print("\n7. Testing save_state (Modal)...")
     try:
@@ -189,14 +190,14 @@ def test_modal_primitives_e2e():
             push_to_hub=False,
             hub_model_id=None,
         )
-        print(f"   ✓ Save state successful")
+        print("   ✓ Save state successful")
         print(f"   Checkpoint: {result['checkpoint_path']}")
         print(f"   Artifact URI: {result['artifact_uri']}")
     except Exception as e:
         print(f"   ❌ Save state failed: {e}")
         registry.delete_run(run_id, test_user_id)
         return False
-    
+
     # Verify metrics in Supabase
     print("\n8. Verifying metrics in Supabase...")
     metrics = registry.get_metrics(run_id)
@@ -206,19 +207,19 @@ def test_modal_primitives_e2e():
             print(f"   - Step {m['step']}: loss={m.get('loss', 'N/A')}")
     else:
         print("   ⚠ No metrics found (may be expected if not explicitly recorded)")
-    
+
     # Cleanup
     print("\n9. Cleaning up test run...")
     registry.update_run(run_id, status="completed")
     print(f"   ✓ Run marked as completed: {run_id}")
-    
+
     # Don't delete so we can inspect in Supabase
-    print(f"   Run preserved in database for inspection")
-    
-    print("\n" + "="*80)
+    print("   Run preserved in database for inspection")
+
+    print("\n" + "=" * 80)
     print("✅ All tests passed! Signal primitives are working correctly.")
-    print("="*80 + "\n")
-    
+    print("=" * 80 + "\n")
+
     return True
 
 
@@ -229,6 +230,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Test failed with exception: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
-

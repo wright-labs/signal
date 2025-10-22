@@ -1,9 +1,9 @@
 """Test fixtures and configuration for Supabase-backed Signal API."""
-import json
+
 import tempfile
 from pathlib import Path
 from typing import Dict, Any
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,48 +13,49 @@ from fastapi.testclient import TestClient
 # SUPABASE MOCK FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def mock_supabase_client():
     """Create a mock Supabase client for testing with RLS support."""
     mock_client = MagicMock()
-    
+
     # Mock table().select().eq().single().execute() pattern
     mock_execute = MagicMock()
     mock_execute.data = {}
-    
+
     mock_single = MagicMock()
     mock_single.execute.return_value = mock_execute
-    
+
     mock_eq = MagicMock()
     mock_eq.single.return_value = mock_single
     mock_eq.execute.return_value = mock_execute
-    
+
     mock_select = MagicMock()
     mock_select.eq.return_value = mock_eq
-    
+
     mock_table = MagicMock()
     mock_table.select.return_value = mock_select
     mock_table.insert.return_value = mock_eq
     mock_table.update.return_value = mock_eq
     mock_table.delete.return_value = mock_eq
-    
+
     mock_client.table.return_value = mock_table
-    
+
     # Mock RPC calls (for set_user_context and other stored procedures)
     mock_rpc_response = MagicMock()
     mock_rpc_response.data = None
     mock_client.rpc.return_value.execute.return_value = mock_rpc_response
-    
+
     # Mock auth operations
     mock_user = MagicMock()
     mock_user.id = "test-user-uuid-1234"
     mock_user.email = "test@example.com"
-    
+
     mock_auth_response = MagicMock()
     mock_auth_response.user = mock_user
-    
+
     mock_client.auth.get_user.return_value = mock_auth_response
-    
+
     return mock_client
 
 
@@ -62,6 +63,7 @@ def mock_supabase_client():
 def mock_auth_manager(mock_supabase_client):
     """Create a mock AuthManager for testing."""
     from api.auth import AuthManager
+
     return AuthManager(supabase_client=mock_supabase_client)
 
 
@@ -69,12 +71,14 @@ def mock_auth_manager(mock_supabase_client):
 def mock_run_registry(mock_supabase_client):
     """Create a mock RunRegistry for testing."""
     from api.registry import RunRegistry
+
     return RunRegistry(supabase_client=mock_supabase_client)
 
 
 # =============================================================================
 # TEMPORARY FILE FIXTURES (for legacy code)
 # =============================================================================
+
 
 @pytest.fixture
 def temp_models_config():
@@ -85,31 +89,32 @@ def temp_models_config():
                 "name": "meta-llama/Llama-3.2-1B",
                 "framework": "transformers",
                 "gpu": "l40s:1",
-                "family": "llama"
+                "family": "llama",
             },
             {
                 "name": "meta-llama/Llama-3.2-3B",
                 "framework": "transformers",
                 "gpu": "l40s:1",
-                "family": "llama"
+                "family": "llama",
             },
             {
                 "name": "google/gemma-2-2b",
                 "framework": "unsloth",
                 "gpu": "l40s:1",
-                "family": "gemma"
+                "family": "gemma",
             },
         ]
     }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         import yaml
+
         yaml.dump(models_config, f)
         f.flush()
         temp_path = f.name
-    
+
     yield temp_path
-    
+
     # Cleanup
     Path(temp_path).unlink(missing_ok=True)
 
@@ -118,16 +123,19 @@ def temp_models_config():
 # MANAGER FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def model_registry(temp_models_config):
     """Create a ModelRegistry with temporary config."""
     from api.models import ModelRegistry
+
     return ModelRegistry(config_file=temp_models_config)
 
 
 # =============================================================================
 # TEST DATA FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def test_user_id():
@@ -161,7 +169,7 @@ def sample_messages_batch():
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": "What is the capital of France?"},
-                {"role": "assistant", "content": "The capital of France is Paris."}
+                {"role": "assistant", "content": "The capital of France is Paris."},
             ]
         }
     ]
@@ -199,9 +207,11 @@ def sample_run_config():
 # MOCK MODAL FUNCTIONS
 # =============================================================================
 
+
 @pytest.fixture
 def mock_modal_create_run():
     """Mock Modal create_run function."""
+
     def _mock_create_run(**kwargs):
         return {
             "status": "success",
@@ -213,12 +223,16 @@ def mock_modal_create_run():
                 "lora_adapters": f"/data/runs/{kwargs['user_id']}/{kwargs['run_id']}/lora_adapters",
             },
         }
-    return MagicMock(side_effect=_mock_create_run, remote=MagicMock(side_effect=_mock_create_run))
+
+    return MagicMock(
+        side_effect=_mock_create_run, remote=MagicMock(side_effect=_mock_create_run)
+    )
 
 
 @pytest.fixture
 def mock_modal_forward_backward():
     """Mock Modal forward_backward function."""
+
     def _mock_forward_backward(**kwargs):
         return {
             "status": "success",
@@ -231,12 +245,17 @@ def mock_modal_forward_backward():
                 "min_grad": -0.3,
             },
         }
-    return MagicMock(side_effect=_mock_forward_backward, remote=MagicMock(side_effect=_mock_forward_backward))
+
+    return MagicMock(
+        side_effect=_mock_forward_backward,
+        remote=MagicMock(side_effect=_mock_forward_backward),
+    )
 
 
 @pytest.fixture
 def mock_modal_optim_step():
     """Mock Modal optim_step function."""
+
     def _mock_optim_step(**kwargs):
         return {
             "status": "success",
@@ -246,12 +265,16 @@ def mock_modal_optim_step():
                 "checkpoint_path": f"/data/runs/{kwargs['user_id']}/{kwargs['run_id']}/lora_adapters/step_{kwargs['step'] + 1}",
             },
         }
-    return MagicMock(side_effect=_mock_optim_step, remote=MagicMock(side_effect=_mock_optim_step))
+
+    return MagicMock(
+        side_effect=_mock_optim_step, remote=MagicMock(side_effect=_mock_optim_step)
+    )
 
 
 @pytest.fixture
 def mock_modal_sample():
     """Mock Modal sample function."""
+
     def _mock_sample(**kwargs):
         prompts = kwargs["prompts"]
         outputs = [f"{prompt} [generated text...]" for prompt in prompts]
@@ -260,12 +283,16 @@ def mock_modal_sample():
             "outputs": outputs,
             "logprobs": None,
         }
-    return MagicMock(side_effect=_mock_sample, remote=MagicMock(side_effect=_mock_sample))
+
+    return MagicMock(
+        side_effect=_mock_sample, remote=MagicMock(side_effect=_mock_sample)
+    )
 
 
 @pytest.fixture
 def mock_modal_save_state():
     """Mock Modal save_state function."""
+
     def _mock_save_state(**kwargs):
         mode = kwargs.get("mode", "adapter")
         checkpoint_path = f"/data/runs/{kwargs['user_id']}/{kwargs['run_id']}/checkpoints/step_{kwargs['step']}_{mode}"
@@ -276,12 +303,16 @@ def mock_modal_save_state():
             "pushed_to_hub": kwargs.get("push_to_hub", False),
             "hub_model_id": kwargs.get("hub_model_id"),
         }
-    return MagicMock(side_effect=_mock_save_state, remote=MagicMock(side_effect=_mock_save_state))
+
+    return MagicMock(
+        side_effect=_mock_save_state, remote=MagicMock(side_effect=_mock_save_state)
+    )
 
 
 # =============================================================================
 # FASTAPI TEST CLIENT
 # =============================================================================
+
 
 @pytest.fixture
 def test_client(
@@ -300,24 +331,26 @@ def test_client(
     # Set test environment variables
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
-    
+
     # Mock the Supabase client getter
     from api import supabase_client
+
     monkeypatch.setattr(supabase_client, "get_supabase", lambda: mock_supabase_client)
-    
+
     # Import after monkeypatch to get mocked version
     from main import app
-    
+
     # Patch Modal functions and managers
-    with patch('main.modal_create_run', mock_modal_create_run), \
-         patch('main.modal_forward_backward', mock_modal_forward_backward), \
-         patch('main.modal_optim_step', mock_modal_optim_step), \
-         patch('main.modal_sample', mock_modal_sample), \
-         patch('main.modal_save_state', mock_modal_save_state), \
-         patch('main.auth_manager', mock_auth_manager), \
-         patch('main.run_registry', mock_run_registry), \
-         patch('main.model_registry', model_registry):
-        
+    with (
+        patch("main.modal_create_run", mock_modal_create_run),
+        patch("main.modal_forward_backward", mock_modal_forward_backward),
+        patch("main.modal_optim_step", mock_modal_optim_step),
+        patch("main.modal_sample", mock_modal_sample),
+        patch("main.modal_save_state", mock_modal_save_state),
+        patch("main.auth_manager", mock_auth_manager),
+        patch("main.run_registry", mock_run_registry),
+        patch("main.model_registry", model_registry),
+    ):
         client = TestClient(app)
         yield client
 
@@ -325,6 +358,7 @@ def test_client(
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
 
 def create_test_run(
     run_registry,
@@ -340,12 +374,12 @@ def create_test_run(
             "lora_alpha": 64,
             "learning_rate": 3e-4,
         }
-    
+
     run_id = run_registry.create_run(
         user_id=user_id,
         base_model=base_model,
         config=config,
     )
     run_registry.update_run(run_id, status="active")
-    
+
     return run_id

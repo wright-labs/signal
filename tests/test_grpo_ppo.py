@@ -2,20 +2,20 @@
 
 import pytest
 import torch
-from modal_runtime.loss_functions import grpo_loss, ppo_loss, get_loss_function
+from modal_runtime.loss_functions import grpo_loss, ppo_loss
 
 
 class MockModel:
     """Mock model for testing."""
 
     def __init__(self):
-        self.device = torch.device('cpu')
+        self.device = torch.device("cpu")
 
     def __call__(self, input_ids, attention_mask=None, labels=None, **kwargs):
         # Mock model that returns a simple loss based on input length
         batch_size = input_ids.shape[0]
         loss = torch.tensor([0.5] * batch_size, dtype=torch.float32)
-        return type('MockOutput', (), {'loss': loss})()
+        return type("MockOutput", (), {"loss": loss})()
 
 
 class TestGRPOTokenization:
@@ -28,13 +28,23 @@ class TestGRPOTokenization:
         grpo_data = [
             {
                 "prompt": "What is Python?",
-                "responses": ["Python is a snake.", "Python is a programming language."],
-                "rewards": [0.0, 1.0]
+                "responses": [
+                    "Python is a snake.",
+                    "Python is a programming language.",
+                ],
+                "rewards": [0.0, 1.0],
             }
         ]
 
         class MockTokenizer:
-            def __call__(self, texts, padding=True, truncation=True, max_length=2048, return_tensors="pt"):
+            def __call__(
+                self,
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=2048,
+                return_tensors="pt",
+            ):
                 # Simple mock: return fixed-size tensors for consistent testing
                 batch_size = len(texts)
                 seq_len = max_length
@@ -67,12 +77,19 @@ class TestGRPOTokenization:
                 "prompt": "What is Python?",
                 "response": "Python is a programming language.",
                 "reward": 1.0,
-                "value": 0.5
+                "value": 0.5,
             }
         ]
 
         class MockTokenizer:
-            def __call__(self, texts, padding=True, truncation=True, max_length=2048, return_tensors="pt"):
+            def __call__(
+                self,
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=2048,
+                return_tensors="pt",
+            ):
                 token_ids = []
                 attention_masks = []
 
@@ -111,16 +128,28 @@ class TestGRPODetection:
         grpo_data = [
             {
                 "prompt": "What is Python?",
-                "responses": ["Python is a snake.", "Python is a programming language."],
-                "rewards": [0.0, 1.0]
+                "responses": [
+                    "Python is a snake.",
+                    "Python is a programming language.",
+                ],
+                "rewards": [0.0, 1.0],
             }
         ]
 
         class MockTokenizer:
-            def __call__(self, texts, padding=True, truncation=True, max_length=2048, return_tensors="pt"):
+            def __call__(
+                self,
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=2048,
+                return_tensors="pt",
+            ):
                 # Simple mock that just returns a valid structure
                 return {
-                    "input_ids": torch.zeros(1, 10, dtype=torch.long),  # [batch_size, seq_len]
+                    "input_ids": torch.zeros(
+                        1, 10, dtype=torch.long
+                    ),  # [batch_size, seq_len]
                     "attention_mask": torch.ones(1, 10, dtype=torch.long),
                 }
 
@@ -129,7 +158,9 @@ class TestGRPODetection:
         # Just test that the function doesn't crash and returns expected keys
         # The exact tensor shapes are tested separately
         try:
-            result = tokenize_batch(grpo_data, tokenizer, max_seq_length=128, loss_fn="grpo")
+            result = tokenize_batch(
+                grpo_data, tokenizer, max_seq_length=128, loss_fn="grpo"
+            )
             # Should have GRPO-specific keys
             assert "response_ids" in result
             assert "rewards" in result
@@ -137,7 +168,11 @@ class TestGRPODetection:
         except Exception as e:
             # If there's a tensor shape issue, that's okay for this test
             # The important thing is that GRPO format is detected
-            assert "response_ids" in str(e) or "rewards" in str(e) or "response_masks" in str(e)
+            assert (
+                "response_ids" in str(e)
+                or "rewards" in str(e)
+                or "response_masks" in str(e)
+            )
 
     def test_ppo_format_detection(self):
         """Test that PPO format is correctly detected."""
@@ -148,12 +183,19 @@ class TestGRPODetection:
                 "prompt": "What is Python?",
                 "response": "Python is a programming language.",
                 "reward": 1.0,
-                "value": 0.5
+                "value": 0.5,
             }
         ]
 
         class MockTokenizer:
-            def __call__(self, texts, padding=True, truncation=True, max_length=2048, return_tensors="pt"):
+            def __call__(
+                self,
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=2048,
+                return_tensors="pt",
+            ):
                 return {
                     "input_ids": torch.tensor([[1, 2, 3]]),
                     "attention_mask": torch.tensor([[1, 1, 1]]),
@@ -174,6 +216,7 @@ class TestGRPOLossFunction:
     def test_grpo_loss_function_exists(self):
         """Test that GRPO loss function is registered."""
         from modal_runtime.loss_functions import LOSS_FUNCTIONS
+
         assert "grpo" in LOSS_FUNCTIONS
 
     def test_grpo_loss_signature(self):
@@ -208,7 +251,7 @@ class TestGRPOLossFunction:
             batch=batch,
             beta=0.01,
             clip_epsilon=0.2,
-            reference_model=reference_model
+            reference_model=reference_model,
         )
 
         assert isinstance(loss, torch.Tensor)
@@ -225,6 +268,7 @@ class TestPPOLossFunction:
     def test_ppo_loss_function_exists(self):
         """Test that PPO loss function is registered."""
         from modal_runtime.loss_functions import LOSS_FUNCTIONS
+
         assert "ppo" in LOSS_FUNCTIONS
 
     def test_ppo_loss_signature(self):
@@ -260,7 +304,7 @@ class TestPPOLossFunction:
             batch=batch,
             value_model=value_model,
             beta=0.01,
-            clip_epsilon=0.2
+            clip_epsilon=0.2,
         )
 
         assert isinstance(loss, torch.Tensor)
@@ -282,7 +326,7 @@ class TestSchemaValidation:
         example = TrainingExample(
             prompt="What is Python?",
             responses=["Python is a snake.", "Python is a programming language."],
-            rewards=[0.0, 1.0]
+            rewards=[0.0, 1.0],
         )
 
         assert example.prompt == "What is Python?"
@@ -298,7 +342,7 @@ class TestSchemaValidation:
             prompt="What is Python?",
             response="Python is a programming language.",
             reward=1.0,
-            value=0.5
+            value=0.5,
         )
 
         assert example.prompt == "What is Python?"
@@ -315,7 +359,7 @@ class TestSchemaValidation:
             TrainingExample(
                 prompt="What is Python?",
                 responses=["Python is a snake.", "Python is a programming language."],
-                rewards=[0.0]  # Only one reward for two responses
+                rewards=[0.0],  # Only one reward for two responses
             )
 
     def test_multiple_formats_error(self):
@@ -328,7 +372,7 @@ class TestSchemaValidation:
                 text="Some text",
                 prompt="What is Python?",
                 responses=["Python is a snake."],
-                rewards=[0.0]
+                rewards=[0.0],
             )
 
 
