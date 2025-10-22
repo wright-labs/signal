@@ -368,6 +368,44 @@ inference_late = client.inference(run_id, step=1000)
 
 **📚 For detailed examples and comparisons, see [HYBRID_CLIENT_GUIDE.md](HYBRID_CLIENT_GUIDE.md)**
 
+### Handling Run Migrations
+
+Frontier Signal may briefly migrate a run to different hardware (for example, upgrading from `L40S:2` to `A100-80GB:1`).
+When this happens the API responds with a migration status instead of completing the original request immediately.
+
+The SDK now handles this automatically:
+
+- Migration responses (HTTP 425 / `run_migrating` error codes) trigger polling of the new
+  `/runs/{run_id}/migration_status` endpoint until the run returns to the `running` state.
+- The original API call is replayed automatically after the migration completes, so your
+  code receives the same response it asked for—just a little later.
+- While polling, the SDK emits informative log lines (e.g. `Upgrading from L40S:2 → A100-80GB:1, checkpoint step 420`).
+  You can also register a callback to surface migration progress in your own UI.
+
+```python
+from rewardsignal import TrainingClient
+
+def report_migration(status: dict) -> None:
+    print(f"[{status['phase']}] {status['message']}")
+
+client = TrainingClient(
+    run_id="run_123",
+    api_key="sk-...",
+    migration_callback=report_migration,
+)
+
+# Blocks until the run finishes migrating, then performs the request.
+result = client.forward_backward(batch)
+
+# Manual control is also available:
+client.wait_for_migration()  # Polls until the run is running again
+client.resume_after_migration("POST", f"/runs/{client.run_id}/optim_step")
+```
+
+> **Note:** Because migrations are transient, requests now block briefly during the upgrade window instead of
+> raising an error. Adjust `migration_poll_interval`/`migration_timeout` on `TrainingClient` and `InferenceClient`
+> if you need different retry behavior.
+
 ## Advanced Usage
 
 ### Chat Templates

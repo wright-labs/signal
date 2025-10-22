@@ -1,7 +1,22 @@
 """Tests for TrainingClient specialized client."""
 
+import json
 from unittest.mock import Mock, patch
+
+from requests import Response
+from requests.structures import CaseInsensitiveDict
 from rewardsignal import TrainingClient
+
+
+def _make_response(status_code: int, payload: dict) -> Response:
+    """Utility to create a mock Response with JSON payload."""
+
+    response = Response()
+    response.status_code = status_code
+    response._content = json.dumps(payload).encode("utf-8")
+    response.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+    response.url = "https://api.frontier-signal.com/test"
+    return response
 
 
 class TestTrainingClientInit:
@@ -329,3 +344,90 @@ class TestTrainingClientRetry:
 
         # For this test, we'll just verify the retry count
         assert client.max_retries == 3
+
+
+class TestTrainingClientMigration:
+    """Ensure migration-aware behavior."""
+
+    @patch("rewardsignal.migration.time.sleep", return_value=None)
+    def test_request_waits_for_migration(self, _mock_sleep):
+        """The client should poll and retry when migration is in progress."""
+
+        session = Mock()
+        session.request = Mock(
+            side_effect=[
+                _make_response(
+                    425,
+                    {
+                        "error": {
+                            "code": "run_migrating",
+                            "message": "Run migrating",
+                            "details": {
+                                "status": "migrating",
+                                "from": "L40S:2",
+                                "to": "A100-80GB:1",
+                                "checkpoint_step": 420,
+                            },
+                        }
+                    },
+                ),
+                _make_response(200, {"ok": True}),
+            ]
+        )
+        session.get = Mock(
+            side_effect=[
+                _make_response(
+                    200,
+                    {
+                        "status": "migrating",
+                        "from": "L40S:2",
+                        "to": "A100-80GB:1",
+                        "checkpoint_step": 421,
+                    },
+                ),
+                _make_response(
+                    200,
+                    {
+                        "status": "running",
+                        "from": "A100-80GB:1",
+                        "to": "A100-80GB:1",
+                        "checkpoint_step": 421,
+                    },
+                ),
+            ]
+        )
+        callback = Mock()
+
+        client = TrainingClient(
+            run_id="test_run",
+            api_key="sk-test",
+            session=session,
+            migration_callback=callback,
+            migration_poll_interval=0.01,
+        )
+
+        result = client._request("GET", "/runs/test_run/forward_backward")
+
+        assert result == {"ok": True}
+        assert session.request.call_count == 2
+        assert session.get.call_count == 2
+        assert callback.call_count >= 2
+        phases = [call.args[0]["phase"] for call in callback.call_args_list]
+        assert phases[-1] == "running"
+
+    def test_wait_for_migration_returns_when_running(self):
+        """wait_for_migration should return immediately for running status."""
+
+        session = Mock()
+        session.get = Mock()
+
+        client = TrainingClient(
+            run_id="test_run",
+            api_key="sk-test",
+            session=session,
+        )
+
+        status = client.wait_for_migration(initial_status={"status": "running"})
+
+        assert status["status"].lower() == "running"
+        session.get.assert_not_called()

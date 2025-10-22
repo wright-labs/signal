@@ -1,8 +1,7 @@
 """Inference-specialized client for Signal API."""
 
 import requests
-import time
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 from .schemas import (
     TokenizeResponse,
@@ -11,14 +10,11 @@ from .schemas import (
     ModelInfoResponse,
     ApplyChatTemplateResponse,
 )
-from .exceptions import (
-    SignalAPIError,
-    ConnectionError as SignalConnectionError,
-    TimeoutError as SignalTimeoutError,
-)
+from .exceptions import SignalAPIError
+from .migration import MigrationSupportMixin
 
 
-class InferenceClient:
+class InferenceClient(MigrationSupportMixin):
     """Specialized client for inference operations with optimized defaults."""
 
     def __init__(
@@ -31,6 +27,9 @@ class InferenceClient:
         max_retries: int = 5,  # More retries for transient failures
         batch_size: int = 1,
         session: Optional[requests.Session] = None,
+        migration_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        migration_poll_interval: float = 5.0,
+        migration_timeout: Optional[float] = 600.0,
     ):
         """Initialize inference client."""
         self.run_id = run_id
@@ -58,6 +57,13 @@ class InferenceClient:
         # Simple cache for repeated prompts
         self._cache: Dict[str, str] = {}
         self._cache_enabled = False
+
+        # Initialize migration helpers
+        self._init_migration_support(
+            migration_callback=migration_callback,
+            migration_poll_interval=migration_poll_interval,
+            migration_timeout=migration_timeout,
+        )
 
     def __enter__(self):
         """Context manager entry."""
@@ -92,33 +98,13 @@ class InferenceClient:
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Make a request with immediate retry."""
-        url = f"{self.base_url}{endpoint}"
-        last_exception = None
 
-        for attempt in range(self.max_retries):
-            try:
-                response = self.session.request(method, url, json=json, timeout=self.timeout)
+        return self._perform_request(method, endpoint, json=json, allow_migration=True)
 
-                if response.status_code >= 400:
-                    response.raise_for_status()
+    def _get_retry_delay(self, attempt: int) -> float:
+        """Inference clients perform quick retries with a fixed pause."""
 
-                return response.json()
-
-            except requests.exceptions.Timeout:
-                last_exception = SignalTimeoutError(
-                    f"Request to {endpoint} timed out after {self.timeout}s"
-                )
-            except requests.exceptions.ConnectionError as e:
-                last_exception = SignalConnectionError(f"Failed to connect to {url}: {str(e)}")
-            except requests.exceptions.RequestException as e:
-                last_exception = SignalAPIError(f"Request failed: {str(e)}")
-
-            # Immediate retry (no backoff for inference)
-            if attempt < self.max_retries - 1:
-                time.sleep(0.1)  # Brief pause
-
-        # All retries failed
-        raise last_exception
+        return 0.1
 
     def sample(
         self,

@@ -84,3 +84,17 @@ class TimeoutError(SignalAPIError):
 
     def __init__(self, message: str = "Request timed out.", **kwargs):
         super().__init__(message, **kwargs)
+
+
+class MigrationInProgressError(SignalAPIError):
+    """Raised when a run is temporarily unavailable due to migration."""
+
+    def __init__(
+        self,
+        message: str = "Run is migrating.",
+        *,
+        migration_status: Optional[Dict[str, Any]] = None,
+        status_code: Optional[int] = 425,
+    ) -> None:
+        super().__init__(message, status_code=status_code, response_data=migration_status)
+        self.migration_status = migration_status or {}

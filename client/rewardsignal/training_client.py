@@ -1,23 +1,18 @@
 """Training-specialized client for Signal API."""
 
 import requests
-import time
-from typing import List, Dict, Any, Optional
 from collections import deque
+from typing import Any, Dict, List, Optional, Callable
 
 from .schemas import (
     ForwardBackwardResponse,
     OptimStepResponse,
     SaveStateResponse,
 )
-from .exceptions import (
-    SignalAPIError,
-    ConnectionError as SignalConnectionError,
-    TimeoutError as SignalTimeoutError,
-)
+from .migration import MigrationSupportMixin
 
 
-class TrainingClient:
+class TrainingClient(MigrationSupportMixin):
     """Specialized client for training operations with optimized defaults."""
 
     def __init__(
@@ -28,6 +23,9 @@ class TrainingClient:
         timeout: int = 3600,  # 1 hour for training operations
         max_retries: int = 3,
         session: Optional[requests.Session] = None,
+        migration_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        migration_poll_interval: float = 5.0,
+        migration_timeout: Optional[float] = 600.0,
     ):
         """Initialize training client."""
         self.run_id = run_id
@@ -49,6 +47,13 @@ class TrainingClient:
                 }
             )
             self._owns_session = True
+
+        # Initialize migration helpers
+        self._init_migration_support(
+            migration_callback=migration_callback,
+            migration_poll_interval=migration_poll_interval,
+            migration_timeout=migration_timeout,
+        )
 
         # State tracking
         self.current_step = 0
@@ -75,35 +80,13 @@ class TrainingClient:
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Make a request with exponential backoff retry."""
-        url = f"{self.base_url}{endpoint}"
-        last_exception = None
 
-        for attempt in range(self.max_retries):
-            try:
-                response = self.session.request(method, url, json=json, timeout=self.timeout)
+        return self._perform_request(method, endpoint, json=json, allow_migration=True)
 
-                if response.status_code >= 400:
-                    # Let caller handle errors
-                    response.raise_for_status()
+    def _get_retry_delay(self, attempt: int) -> float:
+        """Return exponential backoff delay for training operations."""
 
-                return response.json()
-
-            except requests.exceptions.Timeout:
-                last_exception = SignalTimeoutError(
-                    f"Request to {endpoint} timed out after {self.timeout}s"
-                )
-            except requests.exceptions.ConnectionError as e:
-                last_exception = SignalConnectionError(f"Failed to connect to {url}: {str(e)}")
-            except requests.exceptions.RequestException as e:
-                last_exception = SignalAPIError(f"Request failed: {str(e)}")
-
-            # Exponential backoff if not last attempt
-            if attempt < self.max_retries - 1:
-                wait_time = 2**attempt  # 1s, 2s, 4s
-                time.sleep(wait_time)
-
-        # All retries failed
-        raise last_exception
+        return 2**attempt  # 1s, 2s, 4s
 
     def forward_backward(
         self,

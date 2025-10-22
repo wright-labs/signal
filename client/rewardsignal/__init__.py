@@ -26,6 +26,7 @@ from .exceptions import (
     ServerError,
     ConnectionError,
     TimeoutError,
+    MigrationInProgressError,
 )
 
 # Schemas (for type hints)
@@ -71,6 +72,7 @@ __all__ = [
     "ServerError",
     "ConnectionError",
     "TimeoutError",
+    "MigrationInProgressError",
     # Schemas
     "RunConfig",
     "RunResponse",

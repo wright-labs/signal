@@ -1,8 +1,23 @@
 """Tests for InferenceClient specialized client."""
 
+import json
 import pytest
 from unittest.mock import Mock, patch
+
+from requests import Response
+from requests.structures import CaseInsensitiveDict
 from rewardsignal import InferenceClient
+
+
+def _make_response(status_code: int, payload: dict) -> Response:
+    """Create a Response with a JSON payload for mocking."""
+
+    response = Response()
+    response.status_code = status_code
+    response._content = json.dumps(payload).encode("utf-8")
+    response.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+    response.url = "https://api.frontier-signal.com/test"
+    return response
 
 
 class TestInferenceClientInit:
@@ -310,3 +325,90 @@ class TestInferenceClientContextManager:
 
         # Shared session should not be closed
         mock_session.close.assert_not_called()
+
+
+class TestInferenceClientMigration:
+    """Ensure migration handling for inference requests."""
+
+    @patch("rewardsignal.migration.time.sleep", return_value=None)
+    def test_request_waits_for_migration(self, _mock_sleep):
+        """The client should wait for migration before returning a result."""
+
+        session = Mock()
+        session.request = Mock(
+            side_effect=[
+                _make_response(
+                    425,
+                    {
+                        "error": {
+                            "code": "run_migrating",
+                            "message": "Run migrating",
+                            "details": {
+                                "status": "migrating",
+                                "from": "L40S:2",
+                                "to": "A100-80GB:1",
+                                "checkpoint_step": 512,
+                            },
+                        }
+                    },
+                ),
+                _make_response(200, {"outputs": ["done"]}),
+            ]
+        )
+        session.get = Mock(
+            side_effect=[
+                _make_response(
+                    200,
+                    {
+                        "status": "migrating",
+                        "from": "L40S:2",
+                        "to": "A100-80GB:1",
+                        "checkpoint_step": 513,
+                    },
+                ),
+                _make_response(
+                    200,
+                    {
+                        "status": "running",
+                        "from": "A100-80GB:1",
+                        "to": "A100-80GB:1",
+                        "checkpoint_step": 513,
+                    },
+                ),
+            ]
+        )
+        callback = Mock()
+
+        client = InferenceClient(
+            run_id="test_run",
+            api_key="sk-test",
+            session=session,
+            migration_callback=callback,
+            migration_poll_interval=0.01,
+        )
+
+        result = client._request("POST", "/runs/test_run/sample", json={})
+
+        assert result == {"outputs": ["done"]}
+        assert session.request.call_count == 2
+        assert session.get.call_count == 2
+        assert callback.call_count >= 2
+        last_payload = callback.call_args_list[-1].args[0]
+        assert last_payload["phase"] == "running"
+
+    def test_wait_for_migration_immediate_return(self):
+        """wait_for_migration should return immediately when run already running."""
+
+        session = Mock()
+        session.get = Mock()
+
+        client = InferenceClient(
+            run_id="test_run",
+            api_key="sk-test",
+            session=session,
+        )
+
+        status = client.wait_for_migration(initial_status={"status": "running"})
+
+        assert status["status"].lower() == "running"
+        session.get.assert_not_called()
