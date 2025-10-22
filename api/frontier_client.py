@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class FrontierClient:
-    """Client for Frontier Backend internal API."""
+    """Client for talking to Frontier Backend internal API."""
 
     def __init__(self):
         self.backend_url = os.getenv("FRONTIER_BACKEND_URL")
