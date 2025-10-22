@@ -3,8 +3,12 @@
 import uuid
 import os
 import logging
+from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+
 from supabase import Client
+
 from api.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -58,12 +62,45 @@ class RunRegistry:
             logger.error(f"Failed to create run for user {user_id}: {e}")
             raise Exception(f"Failed to create training run: {str(e)}")
 
+    def _normalize_run(self, run: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Ensure run records always include expected optional fields."""
+
+        if not run:
+            return run
+
+        # Ensure config exists so downstream callers can safely update it
+        config = run.get("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+        run["config"] = config
+
+        # Populate GPU fields with sensible defaults
+        current_gpu = run.get("current_gpu") or config.get("gpu_config")
+        run["current_gpu"] = current_gpu
+
+        target_gpu = run.get("target_gpu")
+        run["target_gpu"] = target_gpu
+
+        # Ensure migration history is always a list
+        history = run.get("migration_history") or []
+        if not isinstance(history, list):
+            history = []
+        run["migration_history"] = history
+
+        # Provide placeholder for status messages
+        run.setdefault("status_message", None)
+
+        # Some callers expect run_id key in addition to id
+        run.setdefault("run_id", run.get("id"))
+
+        return run
+
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get run metadata."""
         result = (
             self.supabase.table("runs").select("*").eq("id", run_id).single().execute()
         )
-        return result.data
+        return self._normalize_run(result.data)
 
     def update_run(
         self,
@@ -71,6 +108,12 @@ class RunRegistry:
         status: Optional[str] = None,
         current_step: Optional[int] = None,
         metrics: Optional[Dict[str, Any]] = None,
+        *,
+        config_updates: Optional[Dict[str, Any]] = None,
+        status_message: Optional[str] = None,
+        current_gpu: Optional[str] = None,
+        target_gpu: Optional[str] = None,
+        migration_event: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Update run metadata and optionally add metrics."""
         try:
@@ -89,6 +132,71 @@ class RunRegistry:
             if current_step is not None:
                 update_data["current_step"] = current_step
 
+            if status_message is not None:
+                update_data["status_message"] = status_message
+
+            run_snapshot: Optional[Dict[str, Any]] = None
+
+            if config_updates:
+                run_snapshot = run_snapshot or self.get_run(run_id)
+                if not run_snapshot:
+                    logger.error(
+                        "Cannot update config for run %s because it was not found",
+                        run_id,
+                    )
+                    return False
+
+                current_config = deepcopy(run_snapshot.get("config") or {})
+                new_config = deepcopy(current_config)
+                for key, value in config_updates.items():
+                    if value is None:
+                        new_config.pop(key, None)
+                    else:
+                        new_config[key] = value
+
+                update_data["config"] = new_config
+
+                old_gpu = current_config.get("gpu_config")
+                new_gpu = new_config.get("gpu_config")
+
+                if old_gpu != new_gpu:
+                    event = migration_event
+                    if event is None:
+                        event = {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "from_gpu": old_gpu,
+                            "to_gpu": new_gpu,
+                            "reason": status_message or "config_update",
+                        }
+
+                    history = list(run_snapshot.get("migration_history") or [])
+                    history.append(event)
+                    update_data["migration_history"] = history
+
+                    if status == "migrating":
+                        update_data.setdefault(
+                            "current_gpu",
+                            run_snapshot.get("current_gpu") or old_gpu or new_gpu,
+                        )
+                        update_data.setdefault("target_gpu", new_gpu)
+                    else:
+                        update_data["current_gpu"] = new_gpu
+                        update_data.setdefault("target_gpu", None)
+                elif "gpu_config" in config_updates and new_gpu is not None:
+                    update_data.setdefault(
+                        "current_gpu",
+                        run_snapshot.get("current_gpu") or new_gpu,
+                    )
+
+            if current_gpu is not None:
+                update_data["current_gpu"] = current_gpu
+
+            if target_gpu is not None:
+                update_data["target_gpu"] = target_gpu
+
+            if status is not None and status != "migrating":
+                update_data.setdefault("target_gpu", None)
+
             if update_data:
                 self.supabase.table("runs").update(update_data).eq(
                     "id", run_id
@@ -98,8 +206,8 @@ class RunRegistry:
             if metrics is not None:
                 # Get current step from run if not provided
                 if current_step is None:
-                    run = self.get_run(run_id)
-                    current_step = run["current_step"] if run else 0
+                    run_snapshot = run_snapshot or self.get_run(run_id)
+                    current_step = run_snapshot["current_step"] if run_snapshot else 0
 
                 self.supabase.table("run_metrics").insert(
                     {
@@ -131,7 +239,8 @@ class RunRegistry:
                 .execute()
             )
 
-            return result.data or []
+            runs = result.data or []
+            return [self._normalize_run(run) for run in runs]
         except Exception as e:
             logger.error(f"Error listing runs for user {user_id}: {e}")
             return []
@@ -369,7 +478,18 @@ class RunRegistry:
 
         from api.pricing import get_gpu_hourly_rate
 
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        if (
+            run.get("status") == "migrating"
+            and run.get("target_gpu")
+            and isinstance(run.get("target_gpu"), str)
+        ):
+            gpu_config = run["target_gpu"]
+        else:
+            gpu_config = (
+                run.get("current_gpu")
+                or (run["config"].get("gpu_config") if run.get("config") else None)
+                or "l40s:1"
+            )
         total_cost = get_gpu_hourly_rate(gpu_config) * elapsed_hours
 
         last_charged = run.get("last_charged_amount", 0)

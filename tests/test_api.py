@@ -107,6 +107,8 @@ class TestCreateRun:
         assert data["status"] == "active"
         assert "created_at" in data
         assert "config" in data
+        assert "current_gpu" in data
+        assert "migration_history" in data
 
     def test_create_run_with_defaults(self, test_client, test_api_key):
         """Test creating a run with minimal config."""
@@ -234,6 +236,23 @@ class TestGetRunStatus:
         assert data["status"] == "active"
         assert "current_step" in data
         assert "created_at" in data
+        assert "current_gpu" in data
+        assert "migration_history" in data
+
+    def test_get_run_details(self, test_client, test_api_key, run_registry, test_user_id):
+        """Test retrieving run details."""
+        run_id = create_test_run(run_registry, test_user_id)
+
+        response = test_client.get(
+            f"/runs/{run_id}",
+            headers={"Authorization": f"Bearer {test_api_key}"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == run_id
+        assert "migration_history" in data
+        assert data["current_gpu"]
 
     def test_get_run_status_not_found(self, test_client, test_api_key):
         """Test getting status of nonexistent run."""

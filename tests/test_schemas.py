@@ -165,11 +165,17 @@ class TestResponseSchemas:
             status="active",
             created_at="2024-01-01T00:00:00",
             config={"lora_r": 32},
+            current_gpu="L40S:1",
+            target_gpu=None,
+            status_message="Initializing",
+            migration_history=[{"from_gpu": "L40S:1", "to_gpu": "H100:1", "timestamp": "2024-01-01T00:00:00Z"}],
         )
 
         assert response.run_id == "run_123"
         assert response.user_id == "user_456"
         assert response.status == "active"
+        assert response.current_gpu == "L40S:1"
+        assert response.migration_history
 
     def test_forward_backward_response(self):
         """Test ForwardBackwardResponse schema."""

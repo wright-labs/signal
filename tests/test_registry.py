@@ -1,5 +1,7 @@
 """Tests for run registry."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 
@@ -186,6 +188,54 @@ class TestRunUpdates:
         """Test updating a run that doesn't exist."""
         result = run_registry.update_run("nonexistent", status="active")
         assert result is False
+
+    def test_update_run_records_migration(
+        self, run_registry, test_user_id
+    ):
+        """Updating GPU config should append migration history and status message."""
+
+        run_id = "run_test_migration"
+        initial_run = {
+            "id": run_id,
+            "run_id": run_id,
+            "user_id": test_user_id,
+            "status": "running",
+            "current_step": 0,
+            "config": {"gpu_config": "L40S:1"},
+            "current_gpu": "L40S:1",
+            "migration_history": [],
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "updated_at": "2024-01-01T00:00:00+00:00",
+        }
+
+        # Pretend the run exists in the registry
+        original_get_run = run_registry.get_run
+        run_registry.get_run = MagicMock(return_value=initial_run)
+
+        result = run_registry.update_run(
+            run_id,
+            status="migrating",
+            config_updates={"gpu_config": "H100:1"},
+            status_message="Scaling to H100",
+        )
+
+        assert result is True
+
+        update_call = run_registry.supabase.table.return_value.update
+        updated_payload = update_call.call_args[0][0]
+
+        assert updated_payload["status"] == "migrating"
+        assert updated_payload["status_message"] == "Scaling to H100"
+        assert updated_payload["config"]["gpu_config"] == "H100:1"
+        assert updated_payload["current_gpu"] == "L40S:1"
+        assert updated_payload["target_gpu"] == "H100:1"
+        assert updated_payload["migration_history"]
+        last_event = updated_payload["migration_history"][-1]
+        assert last_event["from_gpu"] == "L40S:1"
+        assert last_event["to_gpu"] == "H100:1"
+
+        # Restore original method to avoid leaking state between tests
+        run_registry.get_run = original_get_run
 
 
 class TestRunDeletion:

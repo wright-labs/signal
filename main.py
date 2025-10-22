@@ -64,6 +64,109 @@ from api.schemas import (  # noqa: E402
 
 _training_session_cls_cache = {}
 
+DEFAULT_GPU_CONFIG = os.getenv("DEFAULT_GPU_CONFIG", "l40s:1")
+
+# Backwards-compatibility placeholders for Modal primitives used in tests.
+modal_create_run = None
+modal_forward_backward = None
+modal_optim_step = None
+modal_sample = None
+modal_save_state = None
+
+
+def get_current_gpu_config(run: Dict[str, Any]) -> str:
+    """Return the GPU currently associated with a run."""
+
+    config = run.get("config") or {}
+    current_gpu = run.get("current_gpu") or config.get("gpu_config")
+    return current_gpu or DEFAULT_GPU_CONFIG
+
+
+def get_target_gpu_config(run: Dict[str, Any]) -> Optional[str]:
+    """Return the GPU a run is migrating toward, if any."""
+
+    target_gpu = run.get("target_gpu")
+    if isinstance(target_gpu, str) and target_gpu:
+        return target_gpu
+
+    config = run.get("config") or {}
+    target_gpu = config.get("target_gpu")
+    if isinstance(target_gpu, str) and target_gpu:
+        return target_gpu
+
+    return None
+
+
+def resolve_gpu_config(
+    run: Dict[str, Any], *, prefer_target_on_migration: bool = True
+) -> str:
+    """Resolve the effective GPU configuration for execution or billing."""
+
+    target_gpu = get_target_gpu_config(run)
+    if (
+        prefer_target_on_migration
+        and run.get("status") == "migrating"
+        and target_gpu
+    ):
+        return target_gpu
+
+    current_gpu = get_current_gpu_config(run)
+    if current_gpu:
+        return current_gpu
+
+    if target_gpu:
+        return target_gpu
+
+    return DEFAULT_GPU_CONFIG
+
+
+def build_run_status_payload(run: Dict[str, Any], run_id: Optional[str] = None) -> Dict[str, Any]:
+    """Construct a normalized status payload for run responses."""
+
+    from datetime import datetime, timezone
+
+    payload: Dict[str, Any] = {
+        "run_id": run.get("run_id") or run.get("id") or run_id,
+        "user_id": run.get("user_id"),
+        "base_model": run.get("base_model"),
+        "status": run.get("status"),
+        "current_step": run.get("current_step") or 0,
+        "created_at": run.get("created_at"),
+        "updated_at": run.get("updated_at") or run.get("created_at"),
+        "config": run.get("config") or {},
+    }
+
+    cost_so_far = 0.0
+    cost_per_hour = 0.0
+
+    started_at = run.get("started_at")
+    if started_at:
+        started_dt = datetime.fromisoformat(started_at)
+
+        if run.get("status") == "completed" and run.get("completed_at"):
+            end_dt = datetime.fromisoformat(run["completed_at"])
+        else:
+            end_dt = datetime.now(timezone.utc)
+
+        elapsed_hours = max(0.0, (end_dt - started_dt).total_seconds() / 3600)
+        billing_gpu = resolve_gpu_config(run, prefer_target_on_migration=True)
+        cost_per_hour = get_gpu_hourly_rate(billing_gpu)
+        cost_so_far = cost_per_hour * elapsed_hours
+
+    payload["cost_so_far"] = cost_so_far
+    payload["charged_so_far"] = run.get("last_charged_amount", 0) or 0
+    payload["cost_per_hour"] = cost_per_hour
+    payload["status_message"] = run.get("status_message")
+    payload["current_gpu"] = get_current_gpu_config(run)
+    payload["target_gpu"] = get_target_gpu_config(run)
+
+    history = run.get("migration_history")
+    if not isinstance(history, list):
+        history = []
+    payload["migration_history"] = history
+
+    return payload
+
 
 def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
     """Get stateful training session instance for a run with specific GPU config.
@@ -353,8 +456,9 @@ async def check_and_charge_incremental(
     now = datetime.now(timezone.utc)
     elapsed_hours = (now - started_at).total_seconds() / 3600
 
-    # Calculate GPU cost
-    gpu_cost = get_gpu_hourly_rate(gpu_config) * elapsed_hours
+    # Calculate GPU cost using the latest configuration
+    effective_gpu = resolve_gpu_config(run, prefer_target_on_migration=True)
+    gpu_cost = get_gpu_hourly_rate(effective_gpu) * elapsed_hours
 
     # Calculate storage cost (incremental charging)
     storage_bytes = run_registry.get_total_storage_bytes(run_id)
@@ -639,7 +743,7 @@ async def charge_final_cost(request: Request):
         ended_at = datetime.fromisoformat(
             run.get("completed_at") or datetime.now(timezone.utc).isoformat()
         )
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run, prefer_target_on_migration=True)
         storage_bytes = run_registry.get_total_storage_bytes(run_id)
 
         # Use unified cost calculation
@@ -821,15 +925,23 @@ async def create_run(
             )
 
         # Get run info
-        run_info = run_registry.get_run(run_id)
+        run_info = run_registry.get_run(run_id) or {}
 
         return RunResponse(
             run_id=run_id,
             user_id=user_id,
             base_model=config.base_model,
-            status=run_info["status"],
-            created_at=run_info["created_at"],
-            config=run_info["config"],
+            status=run_info.get("status", "initialized"),
+            created_at=run_info.get("created_at"),
+            config=run_info.get("config") or config_dict,
+            current_gpu=get_current_gpu_config(run_info)
+            if run_info
+            else config_dict.get("gpu_config"),
+            target_gpu=get_target_gpu_config(run_info) if run_info else None,
+            status_message=run_info.get("status_message") if run_info else None,
+            migration_history=list(run_info.get("migration_history", []))
+            if run_info
+            else [],
         )
 
     except HTTPException:
@@ -860,7 +972,7 @@ async def forward_backward(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config from run config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
         logging.info(f"Forward-backward with GPU config: {gpu_config}")
 
         # Check balance (time-based, not step-based)
@@ -922,7 +1034,7 @@ async def forward_backward_async(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config from run config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
         logging.info(f"Forward-backward async with GPU config: {gpu_config}")
 
         # Check balance (time-based, not step-based)
@@ -979,7 +1091,7 @@ async def optim_step(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config from run config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1035,7 +1147,7 @@ async def optim_step_async(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config from run config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1086,7 +1198,7 @@ async def sample(
         run = await get_authorized_run(run_id, user_id)
 
         # Use single GPU for inference regardless of training GPU count
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1139,7 +1251,7 @@ async def sample_async(
         run = await get_authorized_run(run_id, user_id)
 
         # Use single GPU for inference regardless of training GPU count
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1191,7 +1303,7 @@ async def get_session_state(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config and session state
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
         session = get_training_session(run_id, gpu_config=gpu_config)
         state = session.get_state.remote()
 
@@ -1221,7 +1333,7 @@ async def sample_stream(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1271,7 +1383,7 @@ async def generate_embeddings(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1310,7 +1422,7 @@ async def save_state(
         run = await get_authorized_run(run_id, user_id)
 
         # Use single GPU for save operation
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1384,7 +1496,7 @@ async def save_state_async(
         run = await get_authorized_run(run_id, user_id)
 
         # Use single GPU for save operation
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Check balance before expensive operations
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -1431,7 +1543,7 @@ async def tokenize(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1465,7 +1577,7 @@ async def detokenize(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1495,7 +1607,7 @@ async def get_tokenizer_info(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1526,7 +1638,7 @@ async def get_model_info(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1559,7 +1671,7 @@ async def apply_chat_template(
         run = await get_authorized_run(run_id, user_id)
 
         # Get GPU config
-        gpu_config = run["config"].get("gpu_config", "l40s:1")
+        gpu_config = resolve_gpu_config(run)
 
         # Get stateful session
         session = get_training_session(run_id, gpu_config=gpu_config)
@@ -1581,40 +1693,31 @@ async def apply_chat_template(
         )
 
 
+@app.get("/runs/{run_id}", response_model=RunStatus)
+async def get_run_details(
+    run_id: str,
+    user_id: str = Depends(verify_auth),
+):
+    """Get detailed run information including GPU migration state."""
+
+    try:
+        run = await get_authorized_run(run_id, user_id)
+        payload = build_run_status_payload(run, run_id=run_id)
+        return RunStatus(**payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/runs/{run_id}/status", response_model=RunStatus)
 async def get_run_status(
     run_id: str,
     user_id: str = Depends(verify_auth),
 ):
-    """Get run status with real-time cost information."""
+    """Get run status with real-time cost and migration metadata."""
     try:
         run = await get_authorized_run(run_id, user_id)
-
-        # Calculate cost so far
-        cost_so_far = 0.0
-        cost_per_hour = 0.0
-        if run.get("started_at"):
-            from datetime import datetime, timezone
-
-            started_at = datetime.fromisoformat(run["started_at"])
-
-            if run["status"] == "completed" and run.get("completed_at"):
-                end_time = datetime.fromisoformat(run["completed_at"])
-            else:
-                end_time = datetime.now(timezone.utc)
-
-            elapsed_hours = (end_time - started_at).total_seconds() / 3600
-            gpu_config = run["config"].get("gpu_config", "l40s:1")
-            cost_per_hour = get_gpu_hourly_rate(gpu_config)
-            cost_so_far = cost_per_hour * elapsed_hours
-
-        # Add cost info to response
-        response_data = dict(run)
-        response_data["cost_so_far"] = cost_so_far
-        response_data["charged_so_far"] = run.get("last_charged_amount", 0) or 0
-        response_data["cost_per_hour"] = cost_per_hour
-
-        return RunStatus(**response_data)
+        payload = build_run_status_payload(run, run_id=run_id)
+        return RunStatus(**payload)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1736,7 +1839,7 @@ async def complete_run(
             completed_at = datetime.fromisoformat(
                 run.get("completed_at", datetime.now(timezone.utc).isoformat())
             )
-            gpu_config = run["config"].get("gpu_config", "l40s:1")
+            gpu_config = resolve_gpu_config(run)
             storage_bytes = run_registry.get_total_storage_bytes(run_id)
 
             # Use unified cost calculation

@@ -75,6 +75,13 @@ def mock_run_registry(mock_supabase_client):
     return RunRegistry(supabase_client=mock_supabase_client)
 
 
+@pytest.fixture(name="run_registry")
+def run_registry_fixture(mock_run_registry):
+    """Alias fixture to provide backward-compatible run_registry name."""
+
+    return mock_run_registry
+
+
 # =============================================================================
 # TEMPORARY FILE FIXTURES (for legacy code)
 # =============================================================================

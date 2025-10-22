@@ -51,6 +51,10 @@ class RunResponse(BaseModel):
     status: str
     created_at: str
     config: Dict[str, Any]
+    current_gpu: Optional[str] = None
+    target_gpu: Optional[str] = None
+    status_message: Optional[str] = None
+    migration_history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TrainingExample(BaseModel):
