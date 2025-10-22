@@ -22,6 +22,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import modal
+import modal.exception as modal_exception
 
 load_dotenv()
 
@@ -35,6 +36,7 @@ from api.logging_config import security_logger  # noqa: E402
 # from api.openai_compat import router as openai_router
 from api.frontier_client import get_frontier_client  # noqa: E402
 from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
+from api.gpu_allocator import suggest_next_gpu  # noqa: E402
 from api.future_store import store_future, get_future, delete_future  # noqa: E402
 from api.schemas import (  # noqa: E402
     RunConfig,
@@ -61,8 +63,192 @@ from api.schemas import (  # noqa: E402
     EmbeddingsRequest,
     EmbeddingsResponse,
 )
+from modal_runtime.errors import OOMError  # noqa: E402
 
 _training_session_cls_cache = {}
+
+TransportError = getattr(
+    modal_exception, "TransportError", modal_exception.RemoteError
+)
+
+
+def _extract_oom_from_error(error: BaseException) -> Optional[OOMError]:
+    """Best-effort extraction of an OOMError from nested Modal exceptions."""
+
+    visited: set[int] = set()
+
+    def _walk(exc: Optional[BaseException]) -> Optional[OOMError]:
+        if exc is None or id(exc) in visited:
+            return None
+        visited.add(id(exc))
+
+        if isinstance(exc, OOMError):
+            return exc
+
+        for attr in ("__cause__", "__context__"):
+            nested = getattr(exc, attr, None)
+            maybe = _walk(nested)
+            if maybe is not None:
+                return maybe
+
+        for arg in getattr(exc, "args", []) or []:
+            if isinstance(arg, OOMError):
+                return arg
+            if isinstance(arg, BaseException):
+                maybe = _walk(arg)
+                if maybe is not None:
+                    return maybe
+            if isinstance(arg, dict) and arg.get("exception_type") == "OOMError":
+                return OOMError(arg.get("message", "Out of memory"), arg.get("payload"))
+
+        payload = getattr(exc, "payload", None)
+        exc_type = getattr(exc, "exception_type", "")
+        if exc_type == "OOMError" and payload is not None:
+            return OOMError(str(exc), payload)
+
+        return None
+
+    return _walk(error)
+
+
+async def handle_oom(
+    *,
+    run_id: str,
+    user_id: str,
+    run: Dict[str, Any],
+    oom_error: OOMError,
+    session,
+) -> JSONResponse:
+    """Coordinate GPU migration when a run hits OOM."""
+
+    payload = getattr(oom_error, "payload", {}) or {}
+    checkpoint_info = payload.get("checkpoint") if isinstance(payload, dict) else None
+
+    if not checkpoint_info and isinstance(payload, dict):
+        checkpoint_path = payload.get("checkpoint_path")
+        if checkpoint_path:
+            checkpoint_info = {"local_path": checkpoint_path}
+
+    if not checkpoint_info and session is not None:
+        try:
+            save_result = session.save_state.remote(mode="checkpoint")
+            checkpoint_info = {
+                "local_path": save_result.get("local_path"),
+                "s3_uri": save_result.get("s3_uri"),
+                "manifest": save_result.get("manifest"),
+            }
+        except Exception as checkpoint_exc:  # noqa: BLE001
+            logging.warning(
+                "Failed to persist checkpoint after OOM for run %s: %s",
+                run_id,
+                checkpoint_exc,
+            )
+
+    checkpoint_info = checkpoint_info or {}
+
+    current_gpu = (run.get("config") or {}).get("gpu_config", "l40s:1")
+    next_gpu = suggest_next_gpu(current_gpu)
+    if not next_gpu:
+        logging.error(
+            "OOM migration requested for run %s but no larger GPU tier available (current=%s)",
+            run_id,
+            current_gpu,
+        )
+        raise HTTPException(
+            status_code=507,
+            detail="Run exhausted GPU memory and no higher tier is available for migration.",
+        )
+
+    resume_step = None
+    if isinstance(payload, dict):
+        resume_step = payload.get("step")
+    if resume_step is None:
+        resume_step = run.get("current_step")
+
+    migration_metadata = {
+        "from_gpu": current_gpu,
+        "to_gpu": next_gpu,
+        "resume_step": resume_step,
+        "checkpoint": checkpoint_info or None,
+        "reason": payload.get("reason", "cuda_out_of_memory") if isinstance(payload, dict) else "cuda_out_of_memory",
+    }
+
+    run_registry.update_run(run_id, status="migrating", current_step=resume_step)
+    run_registry.update_run_config(
+        run_id,
+        {
+            "gpu_config": next_gpu,
+            "migration": {**migration_metadata, "state": "migrating"},
+        },
+    )
+
+    new_session = get_training_session(run_id, gpu_config=next_gpu)
+
+    config = dict(run.get("config") or {})
+    base_model = run.get("base_model") or config.get("base_model")
+    if not base_model:
+        raise HTTPException(
+            status_code=500,
+            detail="Run metadata missing base model information for migration.",
+        )
+
+    frontier_client = get_frontier_client()
+    try:
+        integrations = await frontier_client.get_integrations(user_id)
+    except Exception as integrations_exc:  # noqa: BLE001
+        logging.warning(
+            "Failed to fetch integrations during OOM migration for run %s: %s",
+            run_id,
+            integrations_exc,
+        )
+        integrations = None
+
+    new_session.initialize.remote(
+        user_id=user_id,
+        run_id=run_id,
+        base_model=base_model,
+        lora_r=config.get("lora_r", 32),
+        lora_alpha=config.get("lora_alpha", 64),
+        lora_dropout=config.get("lora_dropout", 0.0),
+        lora_target_modules=config.get("lora_target_modules"),
+        optimizer=config.get("optimizer", "adamw_8bit"),
+        learning_rate=config.get("learning_rate", 3e-4),
+        weight_decay=config.get("weight_decay", 0.01),
+        max_seq_length=config.get("max_seq_length", 2048),
+        bf16=config.get("bf16", True),
+        gradient_checkpointing=config.get("gradient_checkpointing", True),
+        load_in_8bit=config.get("load_in_8bit", False),
+        load_in_4bit=config.get("load_in_4bit", True),
+        accumulation_steps=config.get("accumulation_steps", 1),
+        auto_checkpoint_interval=config.get("auto_checkpoint_interval", 100),
+        integrations=integrations,
+        resume_from_step=resume_step,
+        gpu_config=next_gpu,
+    )
+
+    run_registry.update_run(run_id, status="running", current_step=resume_step)
+    run_registry.update_run_config(
+        run_id,
+        {
+            "gpu_config": next_gpu,
+            "migration": {**migration_metadata, "state": "ready"},
+        },
+    )
+
+    retry_after = int(os.getenv("OOM_MIGRATION_RETRY_AFTER_SECONDS", "5"))
+
+    migration_status = {
+        "state": "ready",
+        **migration_metadata,
+    }
+
+    response_payload = {
+        "detail": "Run migrated to a higher GPU tier after running out of memory.",
+        "retry_after": retry_after,
+        "migration_status": migration_status,
+    }
+
+    return JSONResponse(status_code=202, content=response_payload)
 
 
 def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
@@ -804,6 +990,7 @@ async def create_run(
                 accumulation_steps=1,
                 auto_checkpoint_interval=100,
                 integrations=integrations,
+                gpu_config=gpu_config,
             )
 
             # Update registry to running status ONLY if Modal succeeds
@@ -870,11 +1057,41 @@ async def forward_backward(
         session = get_training_session(run_id, gpu_config=gpu_config)
 
         # Synchronous execution - blocks until complete
-        result = session.forward_backward.remote(
-            batch_data=fb_request.batch_data,
-            loss_fn=fb_request.loss_fn,
-            loss_kwargs=fb_request.loss_kwargs,
-        )
+        try:
+            result = session.forward_backward.remote(
+                batch_data=fb_request.batch_data,
+                loss_fn=fb_request.loss_fn,
+                loss_kwargs=fb_request.loss_kwargs,
+            )
+        except OOMError as oom_error:
+            logging.warning(
+                "Run %s encountered OOM during forward/backward on GPU %s",
+                run_id,
+                gpu_config,
+            )
+            return await handle_oom(
+                run_id=run_id,
+                user_id=user_id,
+                run=run,
+                oom_error=oom_error,
+                session=session,
+            )
+        except TransportError as transport_error:
+            maybe_oom = _extract_oom_from_error(transport_error)
+            if maybe_oom is not None:
+                logging.warning(
+                    "Run %s encountered OOM transported error on GPU %s",
+                    run_id,
+                    gpu_config,
+                )
+                return await handle_oom(
+                    run_id=run_id,
+                    user_id=user_id,
+                    run=run,
+                    oom_error=maybe_oom,
+                    session=session,
+                )
+            raise
 
         # Update registry with metrics
         run_registry.update_run(
@@ -896,6 +1113,30 @@ async def forward_backward(
 
     except HTTPException:
         raise
+    except TransportError as transport_error:
+        maybe_oom = _extract_oom_from_error(transport_error)
+        if maybe_oom is not None:
+            logging.warning(
+                "Run %s encountered OOM during transport handling on GPU %s",
+                run_id,
+                run.get("config", {}).get("gpu_config", "l40s:1"),
+            )
+            return await handle_oom(
+                run_id=run_id,
+                user_id=user_id,
+                run=run,
+                oom_error=maybe_oom,
+                session=session,
+            )
+        logging.exception(
+            "Transport error in forward_backward for run %s: %s",
+            run_id,
+            transport_error,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Training transport failed while executing forward-backward.",
+        )
     except Exception as e:
         logging.exception(f"Error in forward_backward for run {run_id}: {e}")
         raise HTTPException(
@@ -932,11 +1173,41 @@ async def forward_backward_async(
         session = get_training_session(run_id, gpu_config=gpu_config)
 
         # Async execution with .spawn()
-        future = session.forward_backward.spawn(
-            batch_data=fb_request.batch_data,
-            loss_fn=fb_request.loss_fn,
-            loss_kwargs=fb_request.loss_kwargs,
-        )
+        try:
+            future = session.forward_backward.spawn(
+                batch_data=fb_request.batch_data,
+                loss_fn=fb_request.loss_fn,
+                loss_kwargs=fb_request.loss_kwargs,
+            )
+        except OOMError as oom_error:
+            logging.warning(
+                "Run %s encountered OOM during async forward/backward on GPU %s",
+                run_id,
+                gpu_config,
+            )
+            return await handle_oom(
+                run_id=run_id,
+                user_id=user_id,
+                run=run,
+                oom_error=oom_error,
+                session=session,
+            )
+        except TransportError as transport_error:
+            maybe_oom = _extract_oom_from_error(transport_error)
+            if maybe_oom is not None:
+                logging.warning(
+                    "Run %s encountered OOM transported error during async forward/backward on GPU %s",
+                    run_id,
+                    gpu_config,
+                )
+                return await handle_oom(
+                    run_id=run_id,
+                    user_id=user_id,
+                    run=run,
+                    oom_error=maybe_oom,
+                    session=session,
+                )
+            raise
 
         # Store future and return ID
         future_id = str(uuid.uuid4())

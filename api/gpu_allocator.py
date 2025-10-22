@@ -56,6 +56,12 @@ SAFETY_MARGIN = 1.2
 LORA_OVERHEAD_BASE = 4096
 OPTIMIZER_MULTIPLIER = 2.0
 
+SUPPORTED_GPU_COUNTS = {
+    "L40S": [1, 2, 4],
+    "A100-80GB": [1, 2, 4, 8],
+    "H100": [1, 4],
+}
+
 # Model registry with known parameter counts
 MODEL_REGISTRY: Dict[str, ModelInfo] = {
     # LLaMA family
@@ -210,6 +216,70 @@ def _find_optimal_gpu_config(required_memory_gb: float) -> str:
         return "H100:4"
     else:
         return "H100:8"
+
+
+def _normalize_gpu_type(gpu_type: str) -> Optional[str]:
+    alias_map = {
+        "A100": "A100-80GB",
+        "A10080GB": "A100-80GB",
+        "A100_80GB": "A100-80GB",
+    }
+
+    candidate = gpu_type.strip().upper().replace(" ", "")
+    candidate = alias_map.get(candidate, candidate)
+
+    return candidate if candidate in GPU_MEMORY_CAPACITIES else None
+
+
+def suggest_next_gpu(current_gpu: str) -> Optional[str]:
+    """Suggest the next GPU tier that offers more memory than the current config."""
+
+    if not current_gpu:
+        return None
+
+    try:
+        gpu_type, count_str = current_gpu.split(":")
+        current_count = int(count_str)
+    except ValueError:
+        logger.warning(f"Invalid GPU config format: {current_gpu}")
+        return None
+
+    normalized_type = _normalize_gpu_type(gpu_type)
+    if normalized_type is None:
+        logger.warning(f"Unsupported GPU type for upgrade suggestion: {gpu_type}")
+        return None
+
+    if normalized_type not in SUPPORTED_GPU_COUNTS:
+        logger.warning(
+            f"GPU type {normalized_type} not eligible for automatic upgrades"
+        )
+        return None
+
+    per_gpu_memory = GPU_MEMORY_CAPACITIES.get(normalized_type)
+    if per_gpu_memory is None:
+        return None
+
+    current_total = per_gpu_memory * current_count
+
+    candidates = []
+    for gpu_name, counts in SUPPORTED_GPU_COUNTS.items():
+        per_gpu = GPU_MEMORY_CAPACITIES[gpu_name]
+        for count in counts:
+            candidates.append((per_gpu * count, f"{gpu_name}:{count}"))
+
+    candidates.sort(key=lambda item: item[0])
+
+    for total_memory, config in candidates:
+        if total_memory > current_total:
+            logger.info(
+                f"Suggesting GPU upgrade from {current_gpu} to {config} ({total_memory}GB total)"
+            )
+            return config
+
+    logger.info(
+        f"No higher GPU tier available beyond {current_gpu}; keeping current configuration"
+    )
+    return None
 
 
 def get_supported_models() -> Dict[str, ModelInfo]:

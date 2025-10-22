@@ -120,6 +120,27 @@ class RunRegistry:
             logger.error(f"Error updating run {run_id}: {e}")
             return False
 
+    def update_run_config(self, run_id: str, config_updates: Dict[str, Any]) -> bool:
+        """Merge updates into the run's stored configuration."""
+
+        try:
+            run = self.get_run(run_id)
+            if not run:
+                logger.warning(f"Run {run_id} not found when updating config")
+                return False
+
+            current_config = dict(run.get("config") or {})
+            # Merge updates shallowly; nested dicts should be provided entirely
+            current_config.update(config_updates)
+
+            self.supabase.table("runs").update({"config": current_config}).eq(
+                "id", run_id
+            ).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating config for run {run_id}: {e}")
+            return False
+
     def list_runs(self, user_id: str) -> List[Dict[str, Any]]:
         """List all runs for a user."""
         try:

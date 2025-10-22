@@ -32,6 +32,7 @@ from modal_runtime.utils import (
 from modal_runtime.gpu_monitor import (
     get_gpu_summary,
 )
+from modal_runtime.errors import OOMError
 
 
 @app.cls(
@@ -54,6 +55,7 @@ class TrainingSession:
     user_id: str = None
     run_id: str = None
     config: Dict[str, Any] = None
+    gpu_config: Optional[str] = None
     current_step: int = 0
     last_checkpoint_step: int = 0
     auto_checkpoint_interval: int = 100
@@ -162,6 +164,7 @@ class TrainingSession:
         accumulation_steps: int = 1,
         auto_checkpoint_interval: int = 100,
         integrations: Optional[Dict[str, str]] = None,
+        gpu_config: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Initialize training session.
 
@@ -224,6 +227,9 @@ class TrainingSession:
                 "accumulation_steps": accumulation_steps,
                 "auto_checkpoint_interval": auto_checkpoint_interval,
             }
+            if gpu_config is not None:
+                self.config["gpu_config"] = gpu_config
+            self.gpu_config = gpu_config
 
             # Initialize WandB if credentials provided
             if integrations and integrations.get("wandb"):
@@ -490,6 +496,17 @@ class TrainingSession:
                 "metrics": metrics,
             }
 
+        except torch.cuda.OutOfMemoryError as oom:
+            print("⚠️ CUDA out of memory detected during forward-backward")
+            raise self._build_oom_error(oom) from oom
+        except RuntimeError as runtime_error:
+            error_str = str(runtime_error).lower()
+            if "out of memory" in error_str or "cuda error" in error_str:
+                print("⚠️ Runtime out of memory detected during forward-backward")
+                raise self._build_oom_error(runtime_error) from runtime_error
+            error_msg = f"Forward-backward failed: {str(runtime_error)}\n{traceback.format_exc()}"
+            print(f"\n❌ ERROR: {error_msg}")
+            raise
         except Exception as e:
             error_msg = f"Forward-backward failed: {str(e)}\n{traceback.format_exc()}"
             print(f"\n❌ ERROR: {error_msg}")
@@ -1068,6 +1085,43 @@ class TrainingSession:
         }
 
     # Internal helper methods
+
+    def _build_oom_error(self, exc: BaseException) -> OOMError:
+        """Create a serialisable OOMError with checkpoint context."""
+
+        checkpoint_path = ""
+        checkpoint_record: Dict[str, Any] = {}
+
+        try:
+            checkpoint_path = self._save_checkpoint_internal(
+                tag=f"oom-step-{self.current_step}"
+            )
+            data_volume.commit()
+            if checkpoint_path:
+                checkpoint_record = {"local_path": checkpoint_path}
+        except Exception as checkpoint_exc:
+            print(f"⚠ Failed to checkpoint after OOM: {checkpoint_exc}")
+
+        gpu_summary: Optional[Dict[str, Any]] = None
+        try:
+            gpu_summary = get_gpu_summary()
+        except Exception as summary_exc:
+            print(f"⚠ Failed to collect GPU summary after OOM: {summary_exc}")
+
+        payload: Dict[str, Any] = {
+            "step": self.current_step,
+            "run_id": self.run_id,
+            "user_id": self.user_id,
+            "gpu_config": self.gpu_config or self.config.get("gpu_config"),
+            "gpu_summary": gpu_summary,
+            "checkpoint": checkpoint_record or None,
+            "reason": "cuda_out_of_memory",
+        }
+
+        # Remove None entries for compact payloads
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        return OOMError(str(exc), payload=payload)
 
     def _save_checkpoint_internal(self, tag: Optional[str] = None) -> str:
         """Internal checkpoint save method."""
