@@ -282,24 +282,22 @@ async def get_authorized_run(run_id: str, user_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=403, detail="Unauthorized")
     return run
 
-
 async def check_and_charge_incremental(
     run_id: str,
     user_id: str,
     gpu_config: str,
 ) -> None:
-    """Check balance and charge if needed based on time elapsed. Raises 402 if insufficient.
-
-    Now uses time-based checks (every 2 minutes) instead of step-based checks,
-    which is safer for expensive GPUs with slow training steps.
-    """
+    """Check balance every 2 minutes and charge if needed based on time elapsed. Raises 402 if insufficient."""
     from datetime import datetime, timezone
+
+    # TODO: if they run out of credits, I need to save state and stop the run wherever it is.
+    # TODO: also, should clear storage in 2 weeks if there are still 0 credits in it OR just set max storage cap pretty high.
 
     run = run_registry.get_run(run_id)
     if not run or not run.get("started_at"):
         return
 
-    # Check if we need to check balance (time-based, not step-based)
+    # Check if we need to check balance
     last_check = run.get("last_balance_check_at")
     if last_check:
         last_check_dt = datetime.fromisoformat(last_check)

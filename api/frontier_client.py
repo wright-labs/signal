@@ -23,6 +23,8 @@ class FrontierClient:
             logger.warning(
                 "SIGNAL_INTERNAL_SECRET not set - credit operations will be disabled"
             )
+        
+        # TODO: if this happens, I need to figure out how to stop the app for a bit
 
     def _is_configured(self) -> bool:
         """Check if client is properly configured."""
@@ -70,6 +72,8 @@ class FrontierClient:
         from api.supabase_client import get_supabase
 
         supabase = get_supabase()
+
+        # TODO: may want to move this to the backend?
 
         try:
             existing = (

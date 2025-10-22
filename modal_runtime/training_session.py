@@ -143,6 +143,7 @@ class TrainingSession:
         
         logger.info("✓ Container shutdown complete")
 
+    # TODO: check where this is called and if base_model names is validated from the set
     @modal.method()
     def initialize(
         self,
