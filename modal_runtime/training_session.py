@@ -6,8 +6,11 @@ from typing import Dict, Any, List, Optional
 import time
 import threading
 import traceback
+import logging
 
 from accelerate import Accelerator
+
+logger = logging.getLogger(__name__)
 
 from modal_runtime.app import (
     app,
@@ -78,11 +81,11 @@ class TrainingSession:
             for i in range(num_gpus):
                 gpu_name = torch.cuda.get_device_name(i)
                 gpu_mem = torch.cuda.get_device_properties(i).total_memory / 1024**3
-                print(f"  GPU {i}: {gpu_name} ({gpu_mem:.1f} GB)")
+                logger.info(f"  GPU {i}: {gpu_name} ({gpu_mem:.1f} GB)")
         else:
-            print("⚠️  No CUDA GPUs detected!")
+            logger.warning("⚠️  No CUDA GPUs detected!")
 
-        print(
+        logger.info(
             f"✓ Accelerator initialized (num_processes: {self.accelerator.num_processes})"
         )
 
@@ -92,7 +95,7 @@ class TrainingSession:
             target=self._background_monitor, daemon=True
         )
         self.monitor_thread.start()
-        print("✓ Background monitoring thread started")
+        logger.info("✓ Background monitoring thread started")
 
     @modal.exit()
     def container_shutdown(self):
@@ -104,7 +107,7 @@ class TrainingSession:
         - Container crashes
         """
 
-        print("CONTAINER SHUTTING DOWN")
+        logger.info("CONTAINER SHUTTING DOWN")
 
         # Stop monitoring thread
         self.should_monitor = False
@@ -114,12 +117,12 @@ class TrainingSession:
         # Auto-save if model is loaded
         if self.model is not None:
             try:
-                print(f"Auto-saving checkpoint at step {self.current_step}...")
+                logger.info(f"Auto-saving checkpoint at step {self.current_step}...")
                 self._save_checkpoint_internal(tag=f"autosave-{int(time.time())}")
                 data_volume.commit()
-                print("✓ Auto-save complete")
+                logger.info("✓ Auto-save complete")
             except Exception as e:
-                print(f"⚠ Warning: Auto-save failed: {e}")
+                logger.warning(f"⚠ Warning: Auto-save failed: {e}")
 
         # Clean up GPU memory
         if self.model is not None:
@@ -128,17 +131,17 @@ class TrainingSession:
             del self.optimizer
 
         torch.cuda.empty_cache()
-        print("✓ GPU memory cleaned up")
+        logger.info("✓ GPU memory cleaned up")
         
         # Finish WandB run if active
         if self.wandb_run:
             try:
                 self.wandb_run.finish()
-                print("✓ WandB run finished")
+                logger.info("✓ WandB run finished")
             except Exception as e:
-                print(f"⚠ Failed to finish WandB run: {e}")
+                logger.warning(f"⚠ Failed to finish WandB run: {e}")
         
-        print("✓ Container shutdown complete")
+        logger.info("✓ Container shutdown complete")
 
     @modal.method()
     def initialize(
@@ -182,13 +185,13 @@ class TrainingSession:
         try:
             self._update_activity()
 
-            print("\n" + "=" * 80)
-            print("INITIALIZING TRAINING SESSION")
+            logger.info("\n" + "=" * 80)
+            logger.info("INITIALIZING TRAINING SESSION")
 
-            print(f"User: {user_id}")
-            print(f"Run: {run_id}")
-            print(f"Model: {base_model}")
-            print(f"Resume from step: {resume_from_step}")
+            logger.info(f"User: {user_id}")
+            logger.info(f"Run: {run_id}")
+            logger.info(f"Model: {base_model}")
+            logger.info(f"Resume from step: {resume_from_step}")
 
             # Store session info
             self.user_id = user_id
@@ -245,13 +248,13 @@ class TrainingSession:
                         resume="allow",
                         id=run_id,  # Use run_id for resume capability
                     )
-                    print(f"✓ WandB initialized: {experiment_name}")
+                    logger.info(f"✓ WandB initialized: {experiment_name}")
                 except Exception as e:
-                    print(f"⚠ Failed to initialize WandB: {e}")
+                    logger.warning(f"⚠ Failed to initialize WandB: {e}")
                     self.wandb_run = None
             else:
                 self.wandb_run = None
-                print("ℹ WandB not configured (no API key)")
+                logger.info("ℹ WandB not configured (no API key)")
 
             # Check if resuming from checkpoint
             if resume_from_step is not None:
@@ -263,16 +266,16 @@ class TrainingSession:
                         f"Checkpoint for step {resume_from_step} not found"
                     )
 
-                print(f"\nResuming from checkpoint: {checkpoint_path}")
+                logger.info(f"\nResuming from checkpoint: {checkpoint_path}")
                 self.current_step = resume_from_step
                 self.last_checkpoint_step = resume_from_step
             else:
-                print("\nStarting fresh training run")
+                logger.info("\nStarting fresh training run")
                 self.current_step = 0
                 self.last_checkpoint_step = 0
 
             # Load model and tokenizer (THIS IS THE EXPENSIVE PART - 30-60s)
-            print("\nLoading model and tokenizer...")
+            logger.info("\nLoading model and tokenizer...")
             self.model, self.tokenizer = load_model_and_tokenizer(
                 model_name=base_model,
                 load_in_8bit=load_in_8bit,
@@ -284,7 +287,7 @@ class TrainingSession:
             )
 
             # Apply LoRA adapters
-            print("\nApplying LoRA adapters...")
+            logger.info("\nApplying LoRA adapters...")
             self.model = apply_lora_to_model(
                 model=self.model,
                 lora_r=lora_r,
@@ -295,14 +298,14 @@ class TrainingSession:
 
             # Load checkpoint if resuming
             if resume_from_step is not None:
-                print(f"\nLoading checkpoint from step {resume_from_step}...")
+                logger.info(f"\nLoading checkpoint from step {resume_from_step}...")
                 checkpoint_path = find_latest_checkpoint(
                     paths["lora_adapters"], target_step=resume_from_step
                 )
                 self.model = load_lora_checkpoint(self.model, str(checkpoint_path))
 
             # Setup optimizer (inline from deleted utils/optimizer.py)
-            print(f"\nSetting up {optimizer} optimizer...")
+            logger.info(f"\nSetting up {optimizer} optimizer...")
             trainable_params = [p for p in self.model.parameters() if p.requires_grad]
 
             if optimizer == "adamw_8bit":
@@ -325,7 +328,7 @@ class TrainingSession:
                 raise ValueError(f"Unsupported optimizer: {optimizer}")
 
             # Prepare model and optimizer with Accelerate (handles multi-GPU)
-            print("\nPreparing model and optimizer with Accelerate...")
+            logger.info("\nPreparing model and optimizer with Accelerate...")
             self.model, self.optimizer = self.accelerator.prepare(
                 self.model, self.optimizer
             )
@@ -334,7 +337,7 @@ class TrainingSession:
             if resume_from_step is not None:
                 opt_state_path = paths["optimizer_state"]
                 if opt_state_path.exists():
-                    print("Loading optimizer state...")
+                    logger.info("Loading optimizer state...")
                     state_dict = torch.load(opt_state_path, map_location="cpu")
                     self.optimizer.load_state_dict(state_dict)
 
@@ -346,7 +349,7 @@ class TrainingSession:
 
             # Save initial checkpoint if fresh start
             if resume_from_step is None:
-                print("\nSaving initial checkpoint (step 0)...")
+                logger.info("\nSaving initial checkpoint (step 0)...")
                 self._save_checkpoint_internal(tag="initial")
 
             # Commit volume
@@ -358,14 +361,14 @@ class TrainingSession:
                 p.numel() for p in self.model.parameters() if p.requires_grad
             )
 
-            print("\n" + "=" * 80)
-            print("✓ INITIALIZATION COMPLETE")
+            logger.info("\n" + "=" * 80)
+            logger.info("✓ INITIALIZATION COMPLETE")
 
-            print("Model loaded and ready in GPU memory")
-            print(f"Total parameters: {total_params:,}")
-            print(f"Trainable parameters: {trainable_params:,}")
-            print(f"Current step: {self.current_step}")
-            print(f"Num processes: {self.accelerator.num_processes}")
+            logger.info("Model loaded and ready in GPU memory")
+            logger.info(f"Total parameters: {total_params:,}")
+            logger.info(f"Trainable parameters: {trainable_params:,}")
+            logger.info(f"Current step: {self.current_step}")
+            logger.info(f"Num processes: {self.accelerator.num_processes}")
 
             return {
                 "status": "success",
@@ -380,7 +383,7 @@ class TrainingSession:
 
         except Exception as e:
             error_msg = f"Initialization failed: {str(e)}\n{traceback.format_exc()}"
-            print(f"\n❌ ERROR: {error_msg}")
+            logger.info(f"\n❌ ERROR: {error_msg}")
             raise
 
     @modal.method()
@@ -404,12 +407,12 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            print(f"\n{'=' * 80}")
-            print("FORWARD-BACKWARD PASS")
-            print(f"{'=' * 80}")
-            print(f"Step: {self.current_step}")
-            print(f"Batch size: {len(batch_data)}")
-            print(f"Loss function: {loss_fn}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("FORWARD-BACKWARD PASS")
+            logger.info(f"{'=' * 80}")
+            logger.info(f"Step: {self.current_step}")
+            logger.info(f"Batch size: {len(batch_data)}")
+            logger.info(f"Loss function: {loss_fn}")
 
             # Tokenize batch
             batch = tokenize_batch(
@@ -474,13 +477,13 @@ class TrainingSession:
             # Store loss for WandB logging in optim_step
             self.last_loss = metrics["loss"]
 
-            print(f"\n{'=' * 80}")
-            print("✓ FORWARD-BACKWARD COMPLETE")
-            print(
+            logger.info(f"\n{'=' * 80}")
+            logger.info("✓ FORWARD-BACKWARD COMPLETE")
+            logger.info(
                 f"Loss: {metrics['loss']:.4f} | Grad Norm: {metrics['grad_norm']:.4f}"
             )
-            print(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
-            print(f"{'=' * 80}")
+            logger.info(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
+            logger.info(f"{'=' * 80}")
 
             return {
                 "status": "success",
@@ -492,7 +495,7 @@ class TrainingSession:
 
         except Exception as e:
             error_msg = f"Forward-backward failed: {str(e)}\n{traceback.format_exc()}"
-            print(f"\n❌ ERROR: {error_msg}")
+            logger.info(f"\n❌ ERROR: {error_msg}")
             raise
 
     @modal.method()
@@ -517,10 +520,10 @@ class TrainingSession:
                     "Model/optimizer not initialized. Call initialize() first."
                 )
 
-            print(f"\n{'=' * 80}")
-            print("OPTIMIZER STEP")
-            print(f"{'=' * 80}")
-            print(f"Current step: {self.current_step}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("OPTIMIZER STEP")
+            logger.info(f"{'=' * 80}")
+            logger.info(f"Current step: {self.current_step}")
 
             # Override learning rate if provided
             if learning_rate is not None:
@@ -546,7 +549,7 @@ class TrainingSession:
             steps_since_checkpoint = self.current_step - self.last_checkpoint_step
             checkpoint_saved = False
             if steps_since_checkpoint >= self.auto_checkpoint_interval:
-                print(
+                logger.info(
                     f"\nAuto-checkpoint triggered (every {self.auto_checkpoint_interval} steps)"
                 )
                 self._save_checkpoint_internal()
@@ -564,13 +567,13 @@ class TrainingSession:
                         "train/step": self.current_step,
                     })
                 except Exception as e:
-                    print(f"⚠ Failed to log to WandB: {e}")
+                    logger.info(f"⚠ Failed to log to WandB: {e}")
 
-            print(f"\n{'=' * 80}")
-            print("✓ OPTIMIZER STEP COMPLETE")
-            print(f"New step: {self.current_step}")
-            print(f"Learning rate: {current_lr}")
-            print(f"{'=' * 80}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("✓ OPTIMIZER STEP COMPLETE")
+            logger.info(f"New step: {self.current_step}")
+            logger.info(f"Learning rate: {current_lr}")
+            logger.info(f"{'=' * 80}")
 
             return {
                 "status": "success",
@@ -581,7 +584,7 @@ class TrainingSession:
 
         except Exception as e:
             error_msg = f"Optimizer step failed: {str(e)}\n{traceback.format_exc()}"
-            print(f"\n❌ ERROR: {error_msg}")
+            logger.info(f"\n❌ ERROR: {error_msg}")
             raise
 
     @modal.method()
@@ -601,11 +604,11 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            print(f"\n{'=' * 80}")
-            print("GENERATING SAMPLES")
-            print(f"{'=' * 80}")
-            print(f"Step: {self.current_step}")
-            print(f"Prompts: {len(prompts)}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("GENERATING SAMPLES")
+            logger.info(f"{'=' * 80}")
+            logger.info(f"Step: {self.current_step}")
+            logger.info(f"Prompts: {len(prompts)}")
 
             # Unwrap model for generation (Accelerate wraps it)
             model_to_use = self.accelerator.unwrap_model(self.model)
@@ -619,7 +622,7 @@ class TrainingSession:
 
             with torch.no_grad():
                 for i, prompt in enumerate(prompts):
-                    print(f"  Generating {i + 1}/{len(prompts)}...")
+                    logger.info(f"  Generating {i + 1}/{len(prompts)}...")
 
                     # Tokenize prompt
                     inputs = self.tokenizer(prompt, return_tensors="pt").to(
@@ -662,9 +665,9 @@ class TrainingSession:
             # Switch back to train mode
             model_to_use.train()
 
-            print(f"\n{'=' * 80}")
-            print(f"✓ GENERATED {len(outputs)} COMPLETIONS")
-            print(f"{'=' * 80}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS")
+            logger.info(f"{'=' * 80}")
 
             return {
                 "status": "success",
@@ -676,7 +679,7 @@ class TrainingSession:
 
         except Exception as e:
             error_msg = f"Sampling failed: {str(e)}\n{traceback.format_exc()}"
-            print(f"\n❌ ERROR: {error_msg}")
+            logger.info(f"\n❌ ERROR: {error_msg}")
             raise
 
     @modal.method()
@@ -704,11 +707,11 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            print(f"\n{'=' * 80}")
-            print("SAVING STATE")
-            print(f"{'=' * 80}")
-            print(f"Step: {self.current_step}")
-            print(f"Mode: {mode}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("SAVING STATE")
+            logger.info(f"{'=' * 80}")
+            logger.info(f"Step: {self.current_step}")
+            logger.info(f"Mode: {mode}")
 
             # Save checkpoint
             if tag is None:
@@ -732,7 +735,7 @@ class TrainingSession:
                 )
                 from datetime import datetime, timezone, timedelta
 
-                print("\nUploading checkpoint to S3/R2...")
+                logger.info("\nUploading checkpoint to S3/R2...")
                 upload_result = upload_directory(
                     local_path=save_path,
                     s3_prefix=f"tenants/{self.user_id}/runs/{self.run_id}/checkpoints/{tag}/",
@@ -750,12 +753,12 @@ class TrainingSession:
                 result["download_url"] = download_url
                 result["download_expires_at"] = download_expires_at
 
-                print(
+                logger.info(
                     f"✓ Uploaded {upload_result.get('files_uploaded', 0)} files to S3/R2"
                 )
 
             except Exception as e:
-                print(f"Warning: Failed to upload to S3/R2: {e}")
+                logger.info(f"Warning: Failed to upload to S3/R2: {e}")
                 result["s3_upload_error"] = str(e)
 
             # Push to HuggingFace Hub if requested
@@ -766,10 +769,10 @@ class TrainingSession:
                     hf_token = os.environ.get("HF_TOKEN")
 
                     if not hf_token:
-                        print("Warning: HF_TOKEN not set, skipping Hub push")
+                        logger.info("Warning: HF_TOKEN not set, skipping Hub push")
                         result["hub_push_error"] = "HF_TOKEN not configured"
                     else:
-                        print(f"\nPushing to HuggingFace Hub: {hub_model_id}...")
+                        logger.info(f"\nPushing to HuggingFace Hub: {hub_model_id}...")
 
                         model_to_save = self.accelerator.unwrap_model(self.model)
 
@@ -791,10 +794,10 @@ class TrainingSession:
 
                         result["pushed_to_hub"] = True
                         result["hub_model_id"] = hub_model_id
-                        print(f"✓ Pushed to Hub: {hub_model_id}")
+                        logger.info(f"✓ Pushed to Hub: {hub_model_id}")
 
                 except Exception as e:
-                    print(f"Warning: Failed to push to Hub: {e}")
+                    logger.info(f"Warning: Failed to push to Hub: {e}")
                     result["hub_push_error"] = str(e)
                     result["pushed_to_hub"] = False
             else:
@@ -803,15 +806,15 @@ class TrainingSession:
             # Commit volume
             data_volume.commit()
 
-            print(f"\n{'=' * 80}")
-            print("✓ STATE SAVED")
-            print(f"{'=' * 80}")
+            logger.info(f"\n{'=' * 80}")
+            logger.info("✓ STATE SAVED")
+            logger.info(f"{'=' * 80}")
 
             return result
 
         except Exception as e:
             error_msg = f"Save state failed: {str(e)}\n{traceback.format_exc()}"
-            print(f"\n❌ ERROR: {error_msg}")
+            logger.info(f"\n❌ ERROR: {error_msg}")
             raise
 
     @modal.method()
@@ -1095,7 +1098,7 @@ class TrainingSession:
         torch.save(self.optimizer.state_dict(), opt_path)
 
         self.last_checkpoint_step = self.current_step
-        print(f"✓ Checkpoint saved at step {self.current_step}")
+                logger.info(f"✓ Checkpoint saved at step {self.current_step}")
 
         return str(checkpoint_path)
 
@@ -1105,7 +1108,7 @@ class TrainingSession:
 
     def _background_monitor(self):
         """Background thread for auto-checkpoint monitoring."""
-        print("Background monitor thread started")
+                logger.info("Background monitor thread started")
 
         while self.should_monitor:
             time.sleep(60)  # Check every minute
@@ -1120,26 +1123,10 @@ class TrainingSession:
             steps_since_checkpoint = self.current_step - self.last_checkpoint_step
             if steps_since_checkpoint >= self.auto_checkpoint_interval:
                 try:
-                    print("\n[Background] Auto-checkpoint triggered")
+                    logger.info("\n[Background] Auto-checkpoint triggered")
                     self._save_checkpoint_internal()
                     data_volume.commit()
                 except Exception as e:
-                    print(f"[Background] Auto-checkpoint failed: {e}")
+                    logger.info(f"[Background] Auto-checkpoint failed: {e}")
 
-        print("Background monitor thread stopped")
-
-
-# GPU-specific class aliases
-# For now, all GPU configs use the same TrainingSession class
-# Modal will allocate GPUs based on availability
-# TODO: Create properly separate classes if we need GPU-specific optimizations
-
-TrainingSession_L40S_1 = TrainingSession
-TrainingSession_L40S_2 = TrainingSession  
-TrainingSession_L40S_4 = TrainingSession
-TrainingSession_A100_80GB_1 = TrainingSession
-TrainingSession_A100_80GB_2 = TrainingSession
-TrainingSession_A100_80GB_4 = TrainingSession
-TrainingSession_A100_80GB_8 = TrainingSession
-TrainingSession_H100_1 = TrainingSession
-TrainingSession_H100_4 = TrainingSession
+                logger.info("Background monitor thread stopped")

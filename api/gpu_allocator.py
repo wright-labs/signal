@@ -6,23 +6,51 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Precision types and their memory footprint (bytes per parameter)
-PRECISION_BYTES = {
-    "fp32": 4.0,
-    "fp16": 2.0,
-    "bf16": 2.0,
-    "int8": 1.0,
-    "int4": 0.5,
-}
 
-# Training type memory multipliers
-TRAINING_MULTIPLIERS = {
-    "sft": 1.0,  # Supervised fine-tuning
-    "dpo": 2.0,  # Direct preference optimization
-    "ppo": 3.0,  # Proximal policy optimization
-    "rlhf": 2.0,  # Reinforcement learning from human feedback
-}
+class GPUConfigError(ValueError):
+    """Raised when GPU config is invalid."""
+    pass
 
+
+VALID_GPU_TYPES = ["L40S", "A100", "A100-80GB", "H100", "T4", "A10G"]
+
+
+def validate_gpu_config(gpu_config: str, raise_http_exception: bool = False) -> bool:
+    """Validate GPU configuration format.
+    
+    Args:
+        gpu_config: GPU config string (e.g., "L40S:2")
+        raise_http_exception: If True, raise HTTPException; else raise GPUConfigError
+    
+    Returns:
+        True if valid
+    
+    Raises:
+        HTTPException or GPUConfigError depending on raise_http_exception
+    """
+    try:
+        if not gpu_config or ":" not in gpu_config:
+            raise GPUConfigError("GPU config must be in format 'gpu_type:count'")
+        
+        gpu_type, count_str = gpu_config.rsplit(":", 1)
+        
+        if gpu_type not in VALID_GPU_TYPES:
+            raise GPUConfigError(
+                f"GPU type '{gpu_type}' not supported. "
+                f"Valid types: {', '.join(VALID_GPU_TYPES)}"
+            )
+        
+        count = int(count_str)
+        if not 1 <= count <= 8:
+            raise GPUConfigError("GPU count must be between 1 and 8")
+        
+        return True
+    
+    except GPUConfigError as e:
+        if raise_http_exception:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(e))
+        raise
 
 @dataclass
 class ModelInfo:
@@ -34,27 +62,6 @@ class ModelInfo:
     context_length: int = 2048
     hidden_size: Optional[int] = None
     num_layers: Optional[int] = None
-
-
-@dataclass
-class TrainingConfig:
-    """Training configuration affecting memory usage."""
-
-    batch_size: int = 1
-    sequence_length: int = 2048
-    lora_rank: int = 32
-    lora_alpha: int = 64
-    precision: str = "bf16"
-    training_type: str = "sft"
-    gradient_accumulation_steps: int = 1
-    gradient_checkpointing: bool = True
-
-
-# Constants
-GPU_MEMORY_CAPACITIES = {"L40S": 48, "A100-80GB": 80, "H100": 80, "T4": 16, "A10G": 24}
-SAFETY_MARGIN = 1.2
-LORA_OVERHEAD_BASE = 4096
-OPTIMIZER_MULTIPLIER = 2.0
 
 # Model registry with known parameter counts
 MODEL_REGISTRY: Dict[str, ModelInfo] = {
@@ -110,202 +117,52 @@ def get_model_info(model_name: str) -> Optional[ModelInfo]:
     return None
 
 
-def calculate_memory_requirements(
-    model_info: ModelInfo, config: TrainingConfig
-) -> Tuple[float, Dict[str, float]]:
-    """Calculate total GPU memory requirements for training."""
-    params_billions = model_info.parameters_billions
-    bytes_per_param = PRECISION_BYTES[config.precision]
-    training_multiplier = TRAINING_MULTIPLIERS[config.training_type]
-
-    # Calculate memory components
-    lora_overhead = config.lora_rank / LORA_OVERHEAD_BASE
-    model_memory_gb = params_billions * bytes_per_param * (1 + lora_overhead)
-    optimizer_memory_gb = params_billions * bytes_per_param * OPTIMIZER_MULTIPLIER
-
-    # Activation memory (simplified calculation)
-    estimated_layers = max(24, int(params_billions * 2))
-    activation_memory_gb = (
-        config.batch_size
-        * config.sequence_length
-        * estimated_layers
-        * bytes_per_param
-        / (1024**3)
-    )
-
-    # Batch memory
-    batch_memory_gb = (
-        config.batch_size * config.sequence_length * bytes_per_param / (1024**3)
-    )
-
-    # Apply training type multiplier and safety margin
-    base_memory = (
-        model_memory_gb + optimizer_memory_gb + activation_memory_gb + batch_memory_gb
-    )
-    total_memory_gb = base_memory * training_multiplier * SAFETY_MARGIN
-
-    return total_memory_gb, {
-        "model_memory_gb": model_memory_gb,
-        "optimizer_memory_gb": optimizer_memory_gb,
-        "activation_memory_gb": activation_memory_gb,
-        "batch_memory_gb": batch_memory_gb,
-        "training_multiplier": training_multiplier,
-        "total_memory_gb": total_memory_gb,
-    }
+# Simple allocation rules based on model parameters
+GPU_ALLOCATION_RULES = [
+    (1.0, "L40S:1"),       # < 1B params
+    (7.0, "L40S:1"),       # 1-7B params
+    (13.0, "A100-80GB:1"), # 7-13B params
+    (30.0, "A100-80GB:2"), # 13-30B params
+    (70.0, "A100-80GB:4"), # 30-70B params
+    (float('inf'), "A100-80GB:8"),  # > 70B params
+]
 
 
 def allocate_gpu_config(
     model_name: str,
     user_override: Optional[str] = None,
-    training_config: Optional[TrainingConfig] = None,
-    **kwargs,
 ) -> str:
-    """Allocate GPU configuration based on comprehensive memory requirements."""
+    """Allocate GPU configuration based on model size.
+    
+    Args:
+        model_name: HuggingFace model name
+        user_override: Optional user-specified GPU config
+    
+    Returns:
+        GPU config string (e.g., "L40S:1")
+    """
     if user_override:
+        validate_gpu_config(user_override)
         logger.info(f"Using user-specified GPU config: {user_override}")
         return user_override
-
+    
     model_info = get_model_info(model_name)
     if model_info is None:
-        logger.warning(f"Unknown model {model_name}, using conservative allocation")
-        return "L40S:1"  # Use supported GPU type
-
-    config = training_config or TrainingConfig()
-    total_memory_gb, breakdown = calculate_memory_requirements(model_info, config)
-
-    logger.info(f"Memory requirements for {model_name}: {total_memory_gb:.1f}GB")
-    gpu_config = _find_optimal_gpu_config(total_memory_gb)
-
-    logger.info(
-        f"Auto-allocated {gpu_config} for {model_name} ({model_info.parameters_billions}B params)"
-    )
-    return gpu_config
-
-
-def _find_optimal_gpu_config(required_memory_gb: float) -> str:
-    """Find optimal GPU configuration based on memory requirements."""
-    # Only use GPU types that are supported by Modal training sessions
-    supported_gpus = {
-        "L40S": 48,
-        "A100-80GB": 80,
-        "H100": 80,
-    }
+        logger.warning(f"Unknown model {model_name}, using default GPU")
+        return "L40S:1"
     
-    # Try single GPU first (sorted by memory capacity)
-    for gpu_type, capacity in sorted(supported_gpus.items(), key=lambda x: x[1]):
-        if capacity >= required_memory_gb:
-            return f"{gpu_type}:1"
-
-    # Multi-GPU allocation based on memory requirements
-    a100_capacity = supported_gpus["A100-80GB"]
-    h100_capacity = supported_gpus["H100"]
-
-    if required_memory_gb <= a100_capacity * 2:
-        return "A100-80GB:2"
-    elif required_memory_gb <= a100_capacity * 4:
-        return "A100-80GB:4"
-    elif required_memory_gb <= a100_capacity * 8:
-        return "A100-80GB:8"
-    elif required_memory_gb <= h100_capacity * 4:
-        return "H100:4"
-    else:
-        return "H100:8"
+    params = model_info.parameters_billions
+    
+    for max_params, gpu_config in GPU_ALLOCATION_RULES:
+        if params <= max_params:
+            logger.info(
+                f"Allocated {gpu_config} for {model_name} ({params}B params)"
+            )
+            return gpu_config
+    
+    return "A100-80GB:8"  # Fallback for very large models
 
 
 def get_supported_models() -> Dict[str, ModelInfo]:
     """Get all supported models in the registry."""
     return MODEL_REGISTRY.copy()
-
-
-def estimate_training_memory(
-    model_name: str,
-    batch_size: int = 1,
-    sequence_length: int = 2048,
-    lora_rank: int = 32,
-    precision: str = "bf16",
-    training_type: str = "sft",
-) -> Tuple[float, Dict[str, float]]:
-    """Estimate memory requirements for training a specific model."""
-    model_info = get_model_info(model_name)
-    if model_info is None:
-        raise ValueError(f"Model {model_name} not found in registry")
-
-    config = TrainingConfig(
-        batch_size=batch_size,
-        sequence_length=sequence_length,
-        lora_rank=lora_rank,
-        precision=precision.lower(),
-        training_type=training_type.lower(),
-    )
-
-    return calculate_memory_requirements(model_info, config)
-
-
-# Predefined training configurations for different efficiency levels
-EFFICIENCY_CONFIGS = [
-    {"lora_rank": 16, "precision": "int4", "sequence_length": 2048},  # High efficiency
-    {"lora_rank": 32, "precision": "int8", "sequence_length": 2048},  # Balanced
-    {"lora_rank": 32, "precision": "bf16", "sequence_length": 2048},  # Standard
-    {"lora_rank": 64, "precision": "fp16", "sequence_length": 2048},  # High quality
-]
-
-
-def suggest_training_config(
-    model_name: str, available_memory_gb: float, training_type: str = "sft"
-) -> Dict[str, Any]:
-    """Suggest optimal training configuration for a model given memory constraints."""
-    model_info = get_model_info(model_name)
-    if model_info is None:
-        raise ValueError(f"Model {model_name} not found in registry")
-
-    training_type = training_type.lower()
-
-    # Try configurations from most efficient to least efficient
-    for config_params in EFFICIENCY_CONFIGS:
-        config = TrainingConfig(
-            batch_size=1,
-            sequence_length=config_params["sequence_length"],
-            lora_rank=config_params["lora_rank"],
-            precision=config_params["precision"],
-            training_type=training_type,
-            gradient_checkpointing=True,
-        )
-
-        memory_gb, breakdown = calculate_memory_requirements(model_info, config)
-        if memory_gb <= available_memory_gb:
-            return {
-                "batch_size": config.batch_size,
-                "sequence_length": config.sequence_length,
-                "lora_rank": config.lora_rank,
-                "precision": config.precision,
-                "training_type": config.training_type,
-                "gradient_checkpointing": config.gradient_checkpointing,
-                "estimated_memory_gb": memory_gb,
-                "memory_breakdown": breakdown,
-                "fits_in_memory": True,
-            }
-
-    # If no configuration fits, return the most efficient one with warning
-    most_efficient = EFFICIENCY_CONFIGS[0]
-    config = TrainingConfig(
-        batch_size=1,
-        sequence_length=most_efficient["sequence_length"],
-        lora_rank=most_efficient["lora_rank"],
-        precision=most_efficient["precision"],
-        training_type=training_type,
-        gradient_checkpointing=True,
-    )
-
-    memory_gb, breakdown = calculate_memory_requirements(model_info, config)
-    return {
-        "batch_size": config.batch_size,
-        "sequence_length": config.sequence_length,
-        "lora_rank": config.lora_rank,
-        "precision": config.precision,
-        "training_type": config.training_type,
-        "gradient_checkpointing": config.gradient_checkpointing,
-        "estimated_memory_gb": memory_gb,
-        "memory_breakdown": breakdown,
-        "fits_in_memory": False,
-        "warning": f"Model requires {memory_gb:.1f}GB but only {available_memory_gb}GB available",
-    }

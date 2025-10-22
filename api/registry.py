@@ -362,15 +362,20 @@ class RunRegistry:
             return 0.0
 
         from datetime import datetime, timezone
+        from api.pricing import calculate_run_cost
 
         started_at = datetime.fromisoformat(run["started_at"])
         now = datetime.now(timezone.utc)
-        elapsed_hours = (now - started_at).total_seconds() / 3600
-
-        from api.pricing import get_gpu_hourly_rate
-
         gpu_config = run["config"].get("gpu_config", "l40s:1")
-        total_cost = get_gpu_hourly_rate(gpu_config) * elapsed_hours
+        storage_bytes = self.get_total_storage_bytes(run_id)
 
-        last_charged = run.get("last_charged_amount", 0)
-        return total_cost - last_charged
+        cost_breakdown = calculate_run_cost(
+            gpu_config=gpu_config,
+            started_at=started_at,
+            ended_at=now,
+            storage_bytes=storage_bytes,
+            include_storage=True,
+        )
+
+        last_charged = run.get("last_charged_amount", 0) or 0
+        return cost_breakdown["total_cost"] - last_charged

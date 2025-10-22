@@ -42,30 +42,12 @@ class RunConfig(BaseModel):
     @classmethod
     def validate_gpu_config(cls, v: Optional[str]) -> Optional[str]:
         """Validate GPU configuration format."""
-        if v is None:
-            return v
-
-        valid_gpus = ["L40S", "A100", "A100-80GB", "H100", "T4", "A10G"]
-
-        if ":" not in v:
-            raise ValueError(
-                "GPU config must be in format 'gpu_type:count' (e.g., 'L40S:1')"
-            )
-
-        gpu_type, count_str = v.rsplit(":", 1)
-
-        if gpu_type not in valid_gpus:
-            raise ValueError(
-                f"GPU type '{gpu_type}' not supported. Valid types: {', '.join(valid_gpus)}"
-            )
-
-        try:
-            count = int(count_str)
-            if count < 1 or count > 8:
-                raise ValueError("GPU count must be between 1 and 8")
-        except ValueError:
-            raise ValueError("GPU count must be a valid integer")
-
+        if v is not None:
+            from api.gpu_allocator import validate_gpu_config as validate_gpu_config_func, GPUConfigError
+            try:
+                validate_gpu_config_func(v, raise_http_exception=False)
+            except GPUConfigError as e:
+                raise ValueError(str(e))
         return v
 
     @field_validator("base_model")

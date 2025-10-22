@@ -36,6 +36,8 @@ from api.logging_config import security_logger  # noqa: E402
 from api.frontier_client import get_frontier_client  # noqa: E402
 from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
 from api.future_store import store_future, get_future, delete_future  # noqa: E402
+
+logger = logging.getLogger(__name__)
 from api.schemas import (  # noqa: E402
     RunConfig,
     RunResponse,
@@ -62,99 +64,99 @@ from api.schemas import (  # noqa: E402
     EmbeddingsResponse,
 )
 
-_training_session_cls_cache = {}
+_training_session_cls = None
 
 
 def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
-    """Get stateful training session instance for a run with specific GPU config.
-
+    """Get stateful training session instance for a run.
+    
     Args:
         run_id: Run identifier
-        gpu_config: GPU configuration (e.g., "L40S:2", "A100-80GB:4")
-
-    Modal automatically routes calls with same instance to same container.
+        gpu_config: GPU configuration (used for routing, not class selection)
+    
+    Modal automatically routes calls with same run_id to same container.
     """
-    global _training_session_cls_cache
+    global _training_session_cls
 
     try:
-        # Map GPU config to class name (normalize case)
-        gpu_to_class = {
-            "L40S:1": "TrainingSession_L40S_1",
-            "L40S:2": "TrainingSession_L40S_2",
-            "L40S:4": "TrainingSession_L40S_4",
-            "A100-80GB:1": "TrainingSession_A100_80GB_1",
-            "A100-80GB:2": "TrainingSession_A100_80GB_2",
-            "A100-80GB:4": "TrainingSession_A100_80GB_4",
-            "A100-80GB:8": "TrainingSession_A100_80GB_8",
-            "H100:1": "TrainingSession_H100_1",
-            "H100:4": "TrainingSession_H100_4",
-        }
-
-        class_name = gpu_to_class.get(gpu_config)
-        if class_name is None:
-            # Fallback to single GPU
-            logging.warning(
-                f"GPU config '{gpu_config}' not found in mapping, using L40S:1"
+        # Single class for all GPU configs
+        if _training_session_cls is None:
+            _training_session_cls = modal.Cls.from_name(
+                "signal", "TrainingSession", environment_name="main"
             )
-            class_name = "TrainingSession_L40S_1"
-            gpu_config = "L40S:1"
-
-        # Cache per GPU config
-        if gpu_config not in _training_session_cls_cache:
-            _training_session_cls_cache[gpu_config] = modal.Cls.from_name(
-                "signal", class_name, environment_name="main"
-            )
-
-        # Return new instance
-        return _training_session_cls_cache[gpu_config]()
+        
+        # Return new instance (Modal handles routing by run_id)
+        return _training_session_cls()
 
     except Exception as e:
         import traceback
-
-        logging.error(f"Failed to lookup TrainingSession class for {gpu_config}: {e}")
-        logging.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error(f"Failed to lookup TrainingSession class: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Training infrastructure not available for GPU config '{gpu_config}'. Please ensure Modal is deployed.",
+            detail="Training infrastructure not available. Please ensure Modal is deployed.",
         )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
-    logging.info("🚀 Signal API starting...")
+    logger.info("🚀 Signal API starting...")
 
     # Verify database connectivity
     try:
         from api.supabase_client import get_supabase
 
         get_supabase().table("runs").select("id").limit(1).execute()
-        logging.info("✅ Database connected")
+        logger.info("✅ Database connected")
     except Exception as e:
-        logging.error(f"⚠️ Database unavailable: {e}")
+        logger.error(f"⚠️ Database unavailable: {e}")
 
     # Verify model registry
     model_count = len(model_registry.list_models())
     if model_count == 0:
-        logging.warning("⚠️ No models loaded from config/models.yaml")
+        logger.warning("⚠️ No models loaded from config/models.yaml")
     else:
-        logging.info(f"✅ Loaded {model_count} models")
+        logger.info(f"✅ Loaded {model_count} models")
 
     # Check Modal credentials configured
     if os.getenv("MODAL_TOKEN_ID"):
-        logging.info("✅ Modal credentials configured")
+        logger.info("✅ Modal credentials configured")
     else:
-        logging.warning("⚠️ MODAL_TOKEN_ID not set")
+        logger.warning("⚠️ MODAL_TOKEN_ID not set")
 
-    logging.info("📡 Modal functions will be looked up on first request")
+    logger.info("📡 Modal functions will be looked up on first request")
+
+    # Start background cleanup task for futures
+    import asyncio
+    from api.future_store import cleanup_expired_futures
+    
+    async def cleanup_loop():
+        while True:
+            await asyncio.sleep(300)  # Every 5 minutes
+            try:
+                count = cleanup_expired_futures()
+                if count > 0:
+                    logger.info(f"Cleaned up {count} expired futures")
+            except Exception as e:
+                logger.error(f"Error in future cleanup: {e}")
+    
+    cleanup_task = asyncio.create_task(cleanup_loop())
 
     yield
 
-    logging.info("🛑 Shutting down Signal API...")
+    # Cleanup on shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    
+    logger.info("🛑 Shutting down Signal API...")
     from api.supabase_client import get_supabase
 
     get_supabase.cache_clear()
-    logging.info("✅ Cleanup complete")
+    logger.info("✅ Cleanup complete")
 
 
 app = FastAPI(
@@ -283,40 +285,6 @@ async def get_authorized_run(run_id: str, user_id: str) -> Dict[str, Any]:
     return run
 
 
-def validate_gpu_config(gpu_config: str) -> bool:
-    """Validate GPU config format (e.g., 'l40s:1', 'a100:4')."""
-    if not gpu_config or ":" not in gpu_config:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid GPU config format. Expected format: 'gpu_type:count' (e.g., 'l40s:1')",
-        )
-
-    parts = gpu_config.split(":")
-    if len(parts) != 2:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid GPU config format. Expected format: 'gpu_type:count' (e.g., 'l40s:1')",
-        )
-
-    gpu_type, count_str = parts
-    if not gpu_type or not count_str:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid GPU config format. GPU type and count cannot be empty",
-        )
-
-    try:
-        count = int(count_str)
-        if count < 1 or count > 8:
-            raise HTTPException(
-                status_code=400, detail="GPU count must be between 1 and 8"
-            )
-    except ValueError:
-        raise HTTPException(status_code=400, detail="GPU count must be a valid integer")
-
-    return True
-
-
 async def check_and_charge_incremental(
     run_id: str,
     user_id: str,
@@ -381,7 +349,7 @@ async def check_and_charge_incremental(
 
         # Update tracking
         run_registry.update_charged_amount(run_id, cost_so_far)
-        logging.info(
+        logger.info(
             f"Charged ${amount_to_charge:.4f} for run {run_id} (total: ${cost_so_far:.4f})"
         )
 
@@ -394,7 +362,7 @@ async def check_and_charge_incremental(
             "id", run_id
         ).execute()
     except Exception as e:
-        logging.warning(f"Failed to update last_balance_check_at: {e}")
+        logger.warning(f"Failed to update last_balance_check_at: {e}")
 
     # Check remaining balance
     balance = await frontier_client.get_balance(user_id)
@@ -448,7 +416,7 @@ async def get_future_status(
             status_code=404, detail=f"Future {future_id} not found or expired"
         )
     except Exception as e:
-        logging.exception(f"Error getting future {future_id}: {e}")
+        logger.exception(f"Error getting future {future_id}: {e}")
         return {
             "status": "failed",
             "error": str(e),
@@ -476,7 +444,7 @@ async def cancel_future(
                 "future_id": future_id,
             }
         except Exception as e:
-            logging.warning(f"Failed to cancel future {future_id}: {e}")
+            logger.warning(f"Failed to cancel future {future_id}: {e}")
             return {
                 "status": "error",
                 "error": str(e),
@@ -586,7 +554,7 @@ async def mark_volume_cleaned(
             raise HTTPException(status_code=500, detail="Failed to update database")
 
     except Exception as e:
-        logging.error(f"Error marking volume cleaned for run {run_id}: {e}")
+        logger.error(f"Error marking volume cleaned for run {run_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -625,7 +593,7 @@ async def charge_final_cost(request: Request):
 
         # Calculate actual cost
         if not run.get("started_at"):
-            logging.warning(
+            logger.warning(
                 f"Run {run_id} has no started_at timestamp - skipping charge"
             )
             return {
@@ -667,9 +635,9 @@ async def charge_final_cost(request: Request):
 
             if success:
                 run_registry.update_charged_amount(run_id, actual_cost)
-                logging.info(f"Charged final ${remaining_cost:.4f} for run {run_id}")
+                logger.info(f"Charged final ${remaining_cost:.4f} for run {run_id}")
             else:
-                logging.warning(f"Failed to charge final cost for run {run_id}")
+                logger.warning(f"Failed to charge final cost for run {run_id}")
                 return {
                     "success": False,
                     "run_id": run_id,
@@ -688,7 +656,7 @@ async def charge_final_cost(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"Error charging final cost for run {run_id}: {e}")
+        logger.error(f"Error charging final cost for run {run_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -726,18 +694,18 @@ async def create_run(
         # Use auto-allocation logic
         from api.gpu_allocator import (
             allocate_gpu_config,
-            validate_gpu_config as validate_gpu,
+            validate_gpu_config,
         )
 
         gpu_config = allocate_gpu_config(
             model_name=config.base_model, user_override=config.gpu_config
         )
-        logging.info(
+        logger.info(
             f"Allocated GPU config: {gpu_config} for model {config.base_model}"
         )
 
         # Validate GPU config format
-        validate_gpu(gpu_config)
+        validate_gpu_config(gpu_config, raise_http_exception=True)
 
         # Get config as dict
         config_dict = config.model_dump()
@@ -780,7 +748,7 @@ async def create_run(
         )
 
         # Initialize training run on Modal with proper error handling
-        logging.info(f"Creating run with GPU config: {gpu_config}")
+        logger.info(f"Creating run with GPU config: {gpu_config}")
 
         try:
             # Initialize stateful container with GPU config
@@ -812,7 +780,7 @@ async def create_run(
         except Exception as modal_error:
             # CRITICAL: Clean up failed run to free up concurrent run slot
             run_registry.update_run(run_id, status="failed")
-            logging.error(
+            logger.error(
                 f"Modal initialization failed for run {run_id}: {modal_error}"
             )
             raise HTTPException(
@@ -835,7 +803,7 @@ async def create_run(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error creating run for user {user_id}: {e}")
+        logger.exception(f"Error creating run for user {user_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to create training run. Please try again or contact support.",
@@ -861,7 +829,7 @@ async def forward_backward(
 
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
-        logging.info(f"Forward-backward with GPU config: {gpu_config}")
+        logger.info(f"Forward-backward with GPU config: {gpu_config}")
 
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -897,7 +865,7 @@ async def forward_backward(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in forward_backward for run {run_id}: {e}")
+        logger.exception(f"Error in forward_backward for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Forward-backward pass failed. Please check your batch data or try again.",
@@ -923,7 +891,7 @@ async def forward_backward_async(
 
         # Get GPU config from run config
         gpu_config = run["config"].get("gpu_config", "l40s:1")
-        logging.info(f"Forward-backward async with GPU config: {gpu_config}")
+        logger.info(f"Forward-backward async with GPU config: {gpu_config}")
 
         # Check balance (time-based, not step-based)
         await check_and_charge_incremental(run_id, user_id, gpu_config)
@@ -954,7 +922,7 @@ async def forward_backward_async(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in forward_backward_async for run {run_id}: {e}")
+        logger.exception(f"Error in forward_backward_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Forward-backward pass failed. Please check your batch data or try again.",
@@ -1011,7 +979,7 @@ async def optim_step(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in optim_step for run {run_id}: {e}")
+        logger.exception(f"Error in optim_step for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Optimizer step failed. Please try again."
         )
@@ -1062,7 +1030,7 @@ async def optim_step_async(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in optim_step_async for run {run_id}: {e}")
+        logger.exception(f"Error in optim_step_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Optimizer step failed. Please try again."
         )
@@ -1114,7 +1082,7 @@ async def sample(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in sample for run {run_id}: {e}")
+        logger.exception(f"Error in sample for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Sample generation failed. Please check your prompts or try again.",
@@ -1171,7 +1139,7 @@ async def sample_async(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in sample_async for run {run_id}: {e}")
+        logger.exception(f"Error in sample_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Sample generation failed. Please check your prompts or try again.",
@@ -1200,7 +1168,7 @@ async def get_session_state(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error getting session state for run {run_id}: {e}")
+        logger.exception(f"Error getting session state for run {run_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get session state.")
 
 
@@ -1242,7 +1210,7 @@ async def sample_stream(
                     yield {"data": json.dumps(chunk)}
 
             except Exception as e:
-                logging.exception(f"Error during streaming for run {run_id}: {e}")
+                logger.exception(f"Error during streaming for run {run_id}: {e}")
                 yield {"data": json.dumps({"error": str(e), "is_finished": True})}
 
         return EventSourceResponse(generate())
@@ -1250,7 +1218,7 @@ async def sample_stream(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in sample_stream for run {run_id}: {e}")
+        logger.exception(f"Error in sample_stream for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to start streaming generation. Please try again.",
@@ -1286,7 +1254,7 @@ async def generate_embeddings(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in generate_embeddings for run {run_id}: {e}")
+        logger.exception(f"Error in generate_embeddings for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to generate embeddings. Please try again."
         )
@@ -1327,7 +1295,7 @@ async def save_state(
 
         # Record S3 artifact in database
         if result.get("s3_uri"):
-            logging.info(f"Artifact saved to S3: {result['s3_uri']}")
+            logger.info(f"Artifact saved to S3: {result['s3_uri']}")
 
             artifact_recorded = run_registry.record_artifact(
                 run_id=run_id,
@@ -1341,7 +1309,7 @@ async def save_state(
             if artifact_recorded:
                 run_registry.update_run_s3_uri(run_id=run_id, s3_uri=result["s3_uri"])
             else:
-                logging.warning(
+                logger.warning(
                     f"Failed to record artifact in database for run {run_id}"
                 )
 
@@ -1360,7 +1328,7 @@ async def save_state(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in save_state for run {run_id}: {e}")
+        logger.exception(f"Error in save_state for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to save model state. Please try again."
         )
@@ -1413,7 +1381,7 @@ async def save_state_async(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in save_state_async for run {run_id}: {e}")
+        logger.exception(f"Error in save_state_async for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to save model state. Please try again."
         )
@@ -1447,7 +1415,7 @@ async def tokenize(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in tokenize for run {run_id}: {e}")
+        logger.exception(f"Error in tokenize for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to tokenize text. Please try again."
         )
@@ -1478,7 +1446,7 @@ async def detokenize(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in detokenize for run {run_id}: {e}")
+        logger.exception(f"Error in detokenize for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to detokenize token IDs. Please try again."
         )
@@ -1508,7 +1476,7 @@ async def get_tokenizer_info(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in get_tokenizer_info for run {run_id}: {e}")
+        logger.exception(f"Error in get_tokenizer_info for run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to get tokenizer information. Please try again.",
@@ -1539,7 +1507,7 @@ async def get_model_info(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in get_model_info for run {run_id}: {e}")
+        logger.exception(f"Error in get_model_info for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to get model information. Please try again."
         )
@@ -1575,7 +1543,7 @@ async def apply_chat_template(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error in apply_chat_template for run {run_id}: {e}")
+        logger.exception(f"Error in apply_chat_template for run {run_id}: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to apply chat template. Please try again."
         )
@@ -1658,7 +1626,7 @@ async def get_run_artifacts(
                 )
 
             except Exception as e:
-                logging.error(
+                logger.error(
                     f"Failed to generate signed URL for artifact {artifact.get('id')}: {e}"
                 )
                 artifacts.append(
@@ -1727,7 +1695,7 @@ async def complete_run(
         # Calculate actual cost based on GPU time and storage
         run = run_registry.get_run(run_id)  # Refresh to get completed_at
         if not run.get("started_at"):
-            logging.warning(f"Run {run_id} has no started_at timestamp")
+            logger.warning(f"Run {run_id} has no started_at timestamp")
             actual_cost = 0.0
         else:
             from datetime import datetime, timezone
@@ -1764,7 +1732,7 @@ async def complete_run(
             if success:
                 run_registry.update_charged_amount(run_id, actual_cost)
             else:
-                logging.warning(
+                logger.warning(
                     f"Final charge failed for run {run_id}, user may have insufficient credits"
                 )
 
@@ -1780,7 +1748,7 @@ async def complete_run(
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"Error completing run {run_id}: {e}")
+        logger.exception(f"Error completing run {run_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Failed to complete run. Please try again or contact support.",
@@ -1805,14 +1773,14 @@ async def list_runs(user_id: str = Depends(verify_auth)):
 async def http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code >= 400:
         ip = request.client.host if request.client else "unknown"
-        logging.warning(f"HTTP {exc.status_code}: {exc.detail} from {ip}")
+        logger.warning(f"HTTP {exc.status_code}: {exc.detail} from {ip}")
 
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logging.exception(f"Unhandled exception: {exc}")
+    logger.exception(f"Unhandled exception: {exc}")
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
