@@ -294,8 +294,9 @@ Signal uses a hybrid approach for maximum efficiency:
 
 **Modal GPU Allocation:**
 
-- GPU resources are allocated dynamically per run
-- Uses Modal's `with_options()` for runtime GPU selection
+- GPU resources are allocated dynamically per run using Modal class variants
+- `modal_runtime/training_session.py` exports GPU-specific aliases via `TrainingSession.with_options(...)`
+- The API looks up these aliases (e.g., `TrainingSession_A100_80GB_4`) to launch containers on the matching hardware
 - Each training primitive (`forward_backward`, `optim_step`) runs on the same GPU configuration
 - Inference always uses single GPU for efficiency
 

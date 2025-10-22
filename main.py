@@ -88,6 +88,7 @@ def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
             "A100-80GB:8": "TrainingSession_A100_80GB_8",
             "H100:1": "TrainingSession_H100_1",
             "H100:4": "TrainingSession_H100_4",
+            "H100:8": "TrainingSession_H100_8",
         }
 
         class_name = gpu_to_class.get(gpu_config)

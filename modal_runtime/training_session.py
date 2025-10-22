@@ -1130,16 +1130,26 @@ class TrainingSession:
 
 
 # GPU-specific class aliases
-# For now, all GPU configs use the same TrainingSession class
-# Modal will allocate GPUs based on availability
-# TODO: Create properly separate classes if we need GPU-specific optimizations
+#
+# Modal lets us clone a class with different resource defaults via `.with_options(...)`.
+# Exposing dedicated aliases keeps the application code identical while ensuring that
+# lookups such as `modal.Cls.from_name("signal", "TrainingSession_A100_80GB_4")` pick up
+# the right GPU configuration at deploy time.
 
-TrainingSession_L40S_1 = TrainingSession
-TrainingSession_L40S_2 = TrainingSession  
-TrainingSession_L40S_4 = TrainingSession
-TrainingSession_A100_80GB_1 = TrainingSession
-TrainingSession_A100_80GB_2 = TrainingSession
-TrainingSession_A100_80GB_4 = TrainingSession
-TrainingSession_A100_80GB_8 = TrainingSession
-TrainingSession_H100_1 = TrainingSession
-TrainingSession_H100_4 = TrainingSession
+_GPU_VARIANTS = {
+    "TrainingSession_L40S_1": "L40S:1",
+    "TrainingSession_L40S_2": "L40S:2",
+    "TrainingSession_L40S_4": "L40S:4",
+    "TrainingSession_A100_80GB_1": "A100-80GB:1",
+    "TrainingSession_A100_80GB_2": "A100-80GB:2",
+    "TrainingSession_A100_80GB_4": "A100-80GB:4",
+    "TrainingSession_A100_80GB_8": "A100-80GB:8",
+    "TrainingSession_H100_1": "H100:1",
+    "TrainingSession_H100_4": "H100:4",
+    "TrainingSession_H100_8": "H100:8",
+}
+
+for _alias, _gpu in _GPU_VARIANTS.items():
+    globals()[_alias] = TrainingSession.with_options(gpu=_gpu)
+
+del _alias, _gpu
