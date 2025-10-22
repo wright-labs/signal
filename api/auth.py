@@ -205,19 +205,7 @@ def get_client_ip(request: Request) -> str:
 async def verify_auth(
     authorization: Optional[str] = Header(None), request: Optional[Request] = None
 ) -> str:
-    """Verify API key authentication and return user_id.
-
-    This function:
-    1. Validates the API key against the database
-    2. Sets the user context for RLS policies
-    3. Returns the user_id for use in endpoints
-
-    Only supports API key authentication (sk-xxx format).
-    API keys are generated and managed by the Frontier Backend service.
-
-    For self-hosting: Set up API keys directly in your Supabase database
-    or implement custom authentication logic in this function.
-    """
+    """Verify API key authentication and return user_id"""
     auth_manager = AuthManager()
     ip = get_client_ip(request) if request else "unknown"
     user_agent = request.headers.get("user-agent", "unknown") if request else "unknown"
