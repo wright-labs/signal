@@ -29,6 +29,7 @@ from modal_runtime.utils import (
     save_run_config,
     find_latest_checkpoint,
 )
+from modal_runtime.utils.exceptions import OOMError
 from modal_runtime.gpu_monitor import (
     get_gpu_summary,
 )
@@ -490,6 +491,21 @@ class TrainingSession:
                 "metrics": metrics,
             }
 
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "out of memory" not in str(e).lower():
+                raise
+
+            self._clear_after_oom()
+            payload = self._handle_fatal_error(
+                "oom",
+                {
+                    "operation": "forward_backward",
+                    "message": str(e),
+                    "step": self.current_step,
+                },
+            )
+            raise OOMError(payload) from e
+
         except Exception as e:
             error_msg = f"Forward-backward failed: {str(e)}\n{traceback.format_exc()}"
             print(f"\n❌ ERROR: {error_msg}")
@@ -578,6 +594,21 @@ class TrainingSession:
                 "learning_rate": current_lr,
                 "checkpoint_saved": checkpoint_saved,
             }
+
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "out of memory" not in str(e).lower():
+                raise
+
+            self._clear_after_oom()
+            payload = self._handle_fatal_error(
+                "oom",
+                {
+                    "operation": "optim_step",
+                    "message": str(e),
+                    "step": self.current_step,
+                },
+            )
+            raise OOMError(payload) from e
 
         except Exception as e:
             error_msg = f"Optimizer step failed: {str(e)}\n{traceback.format_exc()}"
@@ -673,6 +704,27 @@ class TrainingSession:
                 "logprobs": all_logprobs,
                 "step": self.current_step,
             }
+
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "out of memory" not in str(e).lower():
+                raise
+
+            if "model_to_use" in locals():
+                try:
+                    model_to_use.train()
+                except Exception:
+                    pass
+
+            self._clear_after_oom()
+            payload = self._handle_fatal_error(
+                "oom",
+                {
+                    "operation": "sample",
+                    "message": str(e),
+                    "step": self.current_step,
+                },
+            )
+            raise OOMError(payload) from e
 
         except Exception as e:
             error_msg = f"Sampling failed: {str(e)}\n{traceback.format_exc()}"
@@ -951,40 +1003,67 @@ class TrainingSession:
         self, texts: List[str], layer: int = -1, pooling: str = "mean"
     ) -> Dict[str, Any]:
         """Generate embeddings for texts."""
-        self._update_activity()
+        try:
+            self._update_activity()
 
-        if self.model is None:
-            raise RuntimeError("Model not initialized. Call initialize() first.")
+            if self.model is None:
+                raise RuntimeError("Model not initialized. Call initialize() first.")
 
-        model = self.accelerator.unwrap_model(self.model)
-        model.eval()
+            model = self.accelerator.unwrap_model(self.model)
+            model.eval()
 
-        embeddings_list = []
-        with torch.no_grad():
-            for text in texts:
-                inputs = self.tokenizer(text, return_tensors="pt").to(
-                    self.accelerator.device
-                )
-                outputs = model(**inputs, output_hidden_states=True)
+            embeddings_list = []
+            with torch.no_grad():
+                for text in texts:
+                    inputs = self.tokenizer(text, return_tensors="pt").to(
+                        self.accelerator.device
+                    )
+                    outputs = model(**inputs, output_hidden_states=True)
 
-                # Get hidden states from specified layer
-                hidden_states = outputs.hidden_states[layer]
+                    # Get hidden states from specified layer
+                    hidden_states = outputs.hidden_states[layer]
 
-                # Apply pooling
-                if pooling == "mean":
-                    embedding = hidden_states.mean(dim=1).squeeze()
-                elif pooling == "last_token":
-                    embedding = hidden_states[:, -1, :].squeeze()
-                elif pooling == "cls_token":
-                    embedding = hidden_states[:, 0, :].squeeze()
+                    # Apply pooling
+                    if pooling == "mean":
+                        embedding = hidden_states.mean(dim=1).squeeze()
+                    elif pooling == "last_token":
+                        embedding = hidden_states[:, -1, :].squeeze()
+                    elif pooling == "cls_token":
+                        embedding = hidden_states[:, 0, :].squeeze()
 
-                embeddings_list.append(embedding.cpu().tolist())
+                    embeddings_list.append(embedding.cpu().tolist())
 
-        model.train()
-        return {
-            "embeddings": embeddings_list,
-            "dimensions": len(embeddings_list[0]) if embeddings_list else 0,
-        }
+            model.train()
+            return {
+                "embeddings": embeddings_list,
+                "dimensions": len(embeddings_list[0]) if embeddings_list else 0,
+            }
+
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "out of memory" not in str(e).lower():
+                raise
+
+            if "model" in locals():
+                try:
+                    model.train()
+                except Exception:
+                    pass
+
+            self._clear_after_oom()
+            payload = self._handle_fatal_error(
+                "oom",
+                {
+                    "operation": "generate_embeddings",
+                    "message": str(e),
+                    "step": self.current_step,
+                },
+            )
+            raise OOMError(payload) from e
+
+        except Exception as e:
+            error_msg = f"Embedding generation failed: {str(e)}\n{traceback.format_exc()}"
+            print(f"\n❌ ERROR: {error_msg}")
+            raise
 
     @modal.method()
     def train_grpo_step(
@@ -1068,6 +1147,56 @@ class TrainingSession:
         }
 
     # Internal helper methods
+
+    def _clear_after_oom(self) -> None:
+        """Release memory after an out-of-memory error."""
+        if self.optimizer is not None:
+            try:
+                self.optimizer.zero_grad(set_to_none=True)
+            except TypeError:
+                self.optimizer.zero_grad()
+
+        if self.model is not None and hasattr(self.model, "zero_grad"):
+            try:
+                self.model.zero_grad(set_to_none=True)
+            except TypeError:
+                self.model.zero_grad()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def _handle_fatal_error(self, error_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist state and build an error payload for fatal failures."""
+        context = {**context, "user_id": self.user_id, "run_id": self.run_id}
+
+        print("\n" + "!" * 80)
+        print(f"FATAL ERROR ({error_type}) encountered at step {self.current_step}")
+        if context.get("operation"):
+            print(f"Operation: {context['operation']}")
+        if context.get("message"):
+            print(f"Details: {context['message']}")
+        print("!" * 80 + "\n")
+
+        checkpoint_path = ""
+        try:
+            checkpoint_tag = f"fatal-{error_type}-{int(time.time())}"
+            checkpoint_path = self._save_checkpoint_internal(tag=checkpoint_tag)
+            data_volume.commit()
+            if checkpoint_path:
+                print(f"✓ Fatal error checkpoint saved: {checkpoint_path}")
+        except Exception as checkpoint_error:
+            print(
+                f"⚠ Failed to save checkpoint during fatal error handling: {checkpoint_error}"
+            )
+
+        payload = {
+            "error": error_type,
+            "step": self.current_step,
+            "checkpoint": checkpoint_path,
+            "context": context,
+        }
+
+        return payload
 
     def _save_checkpoint_internal(self, tag: Optional[str] = None) -> str:
         """Internal checkpoint save method."""
