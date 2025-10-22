@@ -168,7 +168,7 @@ def allocate_gpu_config(
     model_info = get_model_info(model_name)
     if model_info is None:
         logger.warning(f"Unknown model {model_name}, using conservative allocation")
-        return "A100-80GB:2"
+        return "L40S:1"  # Use supported GPU type
 
     config = training_config or TrainingConfig()
     total_memory_gb, breakdown = calculate_memory_requirements(model_info, config)
@@ -184,14 +184,21 @@ def allocate_gpu_config(
 
 def _find_optimal_gpu_config(required_memory_gb: float) -> str:
     """Find optimal GPU configuration based on memory requirements."""
+    # Only use GPU types that are supported by Modal training sessions
+    supported_gpus = {
+        "L40S": 48,
+        "A100-80GB": 80,
+        "H100": 80,
+    }
+    
     # Try single GPU first (sorted by memory capacity)
-    for gpu_type, capacity in sorted(GPU_MEMORY_CAPACITIES.items(), key=lambda x: x[1]):
+    for gpu_type, capacity in sorted(supported_gpus.items(), key=lambda x: x[1]):
         if capacity >= required_memory_gb:
             return f"{gpu_type}:1"
 
     # Multi-GPU allocation based on memory requirements
-    a100_capacity = GPU_MEMORY_CAPACITIES["A100-80GB"]
-    h100_capacity = GPU_MEMORY_CAPACITIES["H100"]
+    a100_capacity = supported_gpus["A100-80GB"]
+    h100_capacity = supported_gpus["H100"]
 
     if required_memory_gb <= a100_capacity * 2:
         return "A100-80GB:2"

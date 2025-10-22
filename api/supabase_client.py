@@ -16,7 +16,8 @@ def get_supabase() -> Client:
 
     if not supabase_url or not supabase_key:
         raise ValueError(
-            "SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables"
+            f"SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables. "
+            f"URL: {supabase_url}, Key: {supabase_key[:20] if supabase_key else 'None'}..."
         )
 
     return create_client(supabase_url, supabase_key)
