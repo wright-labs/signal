@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware # TODO: do i need starlette?
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -28,11 +28,12 @@ load_dotenv()
 # Add current directory to path for modal_runtime imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+# TODO: wait wtf is noqa: E402 why did I add this again
 from api.auth import AuthManager, get_client_ip  # noqa: E402
 from api.registry import RunRegistry  # noqa: E402
 from api.models import ModelRegistry  # noqa: E402
 from api.logging_config import security_logger  # noqa: E402
-# from api.openai_compat import router as openai_router
+# from api.openai_compat import router as openai_router TODO: i should prob ship w verifiers integrations
 from api.frontier_client import get_frontier_client  # noqa: E402
 from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
 from api.future_store import store_future, get_future, delete_future  # noqa: E402
@@ -68,14 +69,9 @@ _training_session_cls = None
 
 
 def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
-    """Get stateful training session instance for a run.
-    
-    Args:
-        run_id: Run identifier
-        gpu_config: GPU configuration (used for routing, not class selection)
-    
-    Modal automatically routes calls with same run_id to same container.
-    """
+    """get training session instance for a run"""
+    # TODO: am i dumb does this actually set a global var did i not know this
+    # TODO: am i stupid or will this not work for multiple sessions/a lot of users at a time
     global _training_session_cls
 
     try:
@@ -114,6 +110,7 @@ async def lifespan(app: FastAPI):
 
     # Verify model registry
     model_count = len(model_registry.list_models())
+    # ok this may seems like the dumbest if else ever... and it is BUT i was scared the config wouldn't be shared across the thing
     if model_count == 0:
         logger.warning("⚠️ No models loaded from config/models.yaml")
     else:
@@ -131,6 +128,7 @@ async def lifespan(app: FastAPI):
     import asyncio
     from api.future_store import cleanup_expired_futures
     
+    # TODO: dig into this more. why do we yield at the end again?
     async def cleanup_loop():
         while True:
             await asyncio.sleep(300)  # Every 5 minutes
@@ -211,7 +209,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# app.include_router(openai_router)
+# app.include_router(openai_router) TODO: for one click deploy to serve, probably need this, surely
 
 # Initialize managers
 auth_manager = AuthManager()

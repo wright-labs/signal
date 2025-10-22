@@ -1,4 +1,4 @@
-"""Pydantic schemas for API requests and responses."""
+"""Pydantic schemas for API requests and responses. I got pydantic/type checking pilled at my last job."""
 
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -15,7 +15,7 @@ class RunConfig(BaseModel):
     )
     lora_r: int = Field(32, ge=1, le=512, description="LoRA rank (1-512)")
     lora_alpha: int = Field(
-        64, ge=1, le=1024, description="LoRA alpha parameter (1-1024)"
+        32, ge=1, le=1024, description="LoRA alpha parameter (1-1024)"
     )
     lora_dropout: float = Field(
         0.0, ge=0.0, le=0.5, description="LoRA dropout rate (0.0-0.5)"
@@ -31,7 +31,7 @@ class RunConfig(BaseModel):
         0.01, ge=0.0, le=1.0, description="Weight decay (0.0-1.0)"
     )
     max_seq_length: int = Field(
-        2048, ge=128, le=8192, description="Maximum sequence length (128-8192)"
+        2048, ge=128, le=8192, description="Maximum sequence length (128-8192)" # TODO: maybe set a much higher max length?
     )
     bf16: bool = Field(True, description="Use bfloat16 precision")
     gradient_checkpointing: bool = Field(
@@ -74,7 +74,7 @@ class RunResponse(BaseModel):
     created_at: str
     config: Dict[str, Any]
 
-
+# TODO: maybe set a much higher max length?
 class TrainingExample(BaseModel):
     """Individual training example with validation.
 
@@ -167,6 +167,7 @@ class TrainingExample(BaseModel):
         if format_count > 1:
             raise ValueError("Provide only ONE format: SFT, DPO, GRPO, or PPO")
 
+        # TODO: wait why don't we just delete this section
         # Validate format-specific requirements
         if has_dpo:
             # Check if any DPO fields are partially set (shouldn't happen due to all() check above)
@@ -177,7 +178,7 @@ class TrainingExample(BaseModel):
                 raise ValueError(
                     "Number of responses must match number of rewards for GRPO"
                 )
-
+        # TODO: wait why don't we just delete this section
         if has_ppo:
             # Check if PPO fields are partially set (shouldn't happen due to all() check above)
             pass  # Already validated by the all() check
@@ -189,7 +190,7 @@ class ForwardBackwardRequest(BaseModel):
     """Request for forward-backward pass."""
 
     batch_data: List[TrainingExample] = Field(
-        ..., min_items=1, max_items=128, description="List of training examples (1-128)"
+        ..., min_items=1, max_items=128, description="List of training examples (1-128)" # TODO: once again, should probably allow larger batch sizes?
     )
     accumulate: bool = Field(
         False, description="Accumulate gradients instead of replacing"
@@ -231,6 +232,7 @@ class ForwardBackwardRequest(BaseModel):
         None, description="Reference model name for KL divergence penalty"
     )
 
+    # TODO: need to study up and see if I need this
     # GAE parameters
     use_gae: bool = Field(False, description="Use Generalized Advantage Estimation")
     gamma: float = Field(0.99, description="Discount factor for GAE")
@@ -265,7 +267,7 @@ class ForwardBackwardResponse(BaseModel):
 
 class OptimStepRequest(BaseModel):
     """Request for optimizer step."""
-
+    # TODO: should probably make a learning rate scheduler?
     learning_rate: Optional[float] = Field(
         None, description="Override learning rate for this step"
     )
@@ -315,9 +317,9 @@ class SaveStateRequest(BaseModel):
 class SaveStateResponse(BaseModel):
     """Response from saving state."""
 
-    artifact_uri: str  # Local path (backward compatibility)
+    artifact_uri: str  # Local path (backward compatibility) # TODO: do i need this anymore with R2?
     local_path: Optional[str] = None  # Explicit local path
-    checkpoint_path: str  # Deprecated, use local_path
+    checkpoint_path: str  # Deprecated, use local_path # TODO: do i need this anymore with R2?
     s3_uri: Optional[str] = None  # S3 URI for permanent storage
     download_url: Optional[str] = None  # Pre-signed S3 download URL
     download_expires_at: Optional[str] = None  # Expiration timestamp for download URL
@@ -431,7 +433,7 @@ class ModelInfoResponse(BaseModel):
     )
     chat_template: Optional[str] = Field(None, description="Chat template if available")
 
-
+# TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateRequest(BaseModel):
     """Request for applying chat template."""
 
@@ -442,7 +444,7 @@ class ApplyChatTemplateRequest(BaseModel):
         False, description="Whether to add generation prompt at the end"
     )
 
-
+# TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateResponse(BaseModel):
     """Response from applying chat template."""
 

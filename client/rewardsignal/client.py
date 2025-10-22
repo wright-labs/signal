@@ -36,13 +36,6 @@ class SignalRun:
     """Represents a training run with convenient methods."""
 
     def __init__(self, client: "SignalClient", run_id: str, config: Dict[str, Any]):
-        """Initialize a training run.
-
-        Args:
-            client: SignalClient instance
-            run_id: Run identifier
-            config: Run configuration
-        """
         self.client = client
         self.run_id = run_id
         self.config = config
@@ -54,17 +47,6 @@ class SignalRun:
         loss_fn: str = "causal_lm",
         **loss_kwargs,
     ) -> ForwardBackwardResponse:
-        """Perform forward-backward pass.
-
-        Args:
-            batch: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
-            **loss_kwargs: Additional arguments for the loss function
-
-        Returns:
-            Response with loss and gradient stats
-        """
         return self.client.forward_backward(
             run_id=self.run_id,
             batch=batch,
@@ -77,14 +59,6 @@ class SignalRun:
         self,
         learning_rate: Optional[float] = None,
     ) -> OptimStepResponse:
-        """Apply optimizer step.
-
-        Args:
-            learning_rate: Optional learning rate override
-
-        Returns:
-            Response with step metrics
-        """
         return self.client.optim_step(
             run_id=self.run_id,
             learning_rate=learning_rate,
@@ -98,18 +72,6 @@ class SignalRun:
         top_p: float = 0.9,
         return_logprobs: bool = False,
     ) -> List[str]:
-        """Generate samples.
-
-        Args:
-            prompts: List of prompts
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            return_logprobs: Whether to return log probabilities
-
-        Returns:
-            List of generated texts
-        """
         return self.client.sample(
             run_id=self.run_id,
             prompts=prompts,
@@ -125,16 +87,6 @@ class SignalRun:
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
     ) -> SaveStateResponse:
-        """Save model state.
-
-        Args:
-            mode: Save mode ('adapter' or 'merged')
-            push_to_hub: Whether to push to HuggingFace Hub
-            hub_model_id: HuggingFace Hub model ID
-
-        Returns:
-            Response with artifact information
-        """
         return self.client.save_state(
             run_id=self.run_id,
             mode=mode,
@@ -143,51 +95,17 @@ class SignalRun:
         )
 
     def get_status(self) -> RunStatus:
-        """Get run status.
-
-        Returns:
-            Run status information
-        """
         return self.client.get_run_status(self.run_id)
 
     def get_metrics(self) -> RunMetrics:
-        """Get run metrics.
-
-        Returns:
-            Run metrics
-        """
         return self.client.get_run_metrics(self.run_id)
 
     def training(self, **kwargs) -> "TrainingClient":
-        """Get specialized training client for this run.
-
-        Args:
-            **kwargs: Additional training client configuration
-
-        Returns:
-            TrainingClient instance for advanced training operations
-
-        Example:
-            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
-            >>> training = run.training(timeout=7200)
-            >>> training.train_batch(batch_data)
-        """
+        """get just the training client for the run"""
         return self.client.training(self.run_id, **kwargs)
 
     def inference(self, **kwargs) -> "InferenceClient":
-        """Get specialized inference client for this run.
-
-        Args:
-            **kwargs: Additional inference client configuration
-
-        Returns:
-            InferenceClient instance for advanced inference operations
-
-        Example:
-            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
-            >>> inference = run.inference(step=100)
-            >>> outputs = inference.sample(["Hello world"])
-        """
+        """get just the inference client for the run"""
         return self.client.inference(self.run_id, **kwargs)
 
     def tokenize(
@@ -195,15 +113,7 @@ class SignalRun:
         text: str | List[str],
         add_special_tokens: bool = True,
     ) -> TokenizeResponse:
-        """Tokenize text using the model's tokenizer.
-
-        Args:
-            text: Text string or list of strings to tokenize
-            add_special_tokens: Whether to add special tokens
-
-        Returns:
-            Response with token_ids and tokens
-        """
+        """tokenize something using the tokenizer"""
         return self.client.tokenize(
             run_id=self.run_id,
             text=text,
@@ -214,49 +124,26 @@ class SignalRun:
         self,
         token_ids: List[int] | List[List[int]],
     ) -> DetokenizeResponse:
-        """Detokenize token IDs using the model's tokenizer.
-
-        Args:
-            token_ids: Token IDs (single list or list of lists)
-
-        Returns:
-            Response with decoded text
-        """
+        """detokenize something using the tokenizer"""
         return self.client.detokenize(
             run_id=self.run_id,
             token_ids=token_ids,
         )
 
     def get_tokenizer_info(self) -> TokenizerInfoResponse:
-        """Get tokenizer configuration information.
-
-        Returns:
-            Tokenizer information including vocab size and special tokens
-        """
         return self.client.get_tokenizer_info(self.run_id)
 
     def get_model_info(self) -> ModelInfoResponse:
-        """Get model architecture information.
-
-        Returns:
-            Model information including architecture and parameter counts
-        """
+        """returns model name and size"""
         return self.client.get_model_info(self.run_id)
-
+    
+    # TODO: maybe don't ship the chat template thing
     def apply_chat_template(
         self,
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
     ) -> ApplyChatTemplateResponse:
-        """Apply the model's chat template to format messages.
-
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            add_generation_prompt: Whether to add generation prompt
-
-        Returns:
-            Response with formatted text and token_ids
-        """
+        """make a chat template for openai compaitb"""
         return self.client.apply_chat_template(
             run_id=self.run_id,
             messages=messages,
@@ -270,16 +157,9 @@ class SignalClient:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://api.frontier-signal.com",
+        base_url: str = "https://api.frontier-signal.com", # TODO: hardcode the default url, 
         timeout: int = 300,
     ):
-        """Initialize the client.
-
-        Args:
-            api_key: API key for authentication
-            base_url: Base URL of the API server
-            timeout: Request timeout in seconds (default: 300)
-        """
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -292,11 +172,11 @@ class SignalClient:
         )
 
     def __enter__(self):
-        """Context manager entry."""
+        """context manager entry."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
+        """context manager exit."""
         self.close()
 
     def close(self):
@@ -304,14 +184,7 @@ class SignalClient:
         self.session.close()
 
     def _handle_error(self, response: requests.Response) -> None:
-        """Handle error responses.
-
-        Args:
-            response: HTTP response
-
-        Raises:
-            SignalAPIError: Appropriate exception based on status code
-        """
+        """did this to centralize error handling"""
         try:
             error_data = response.json()
             error_msg = error_data.get("detail") or error_data.get("error", response.text)
@@ -359,21 +232,10 @@ class SignalClient:
         endpoint: str,
         json: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        """Make a request to the API.
-
-        Args:
-            method: HTTP method
-            endpoint: API endpoint
-            json: Optional JSON payload
-
-        Returns:
-            Response data
-
-        Raises:
-            SignalAPIError: If request fails
-        """
+        """make a request to the API woah"""
         url = f"{self.base_url}{endpoint}"
 
+        # yes these are a lot of overspecified try catches, yes claude suggested this, yes i want to keep it for debugging.
         try:
             response = self.session.request(method, url, json=json, timeout=self.timeout)
         except requests.exceptions.Timeout:
@@ -389,11 +251,6 @@ class SignalClient:
         return response.json()
 
     def list_models(self) -> List[str]:
-        """List available models.
-
-        Returns:
-            List of model names
-        """
         response = self._request("GET", "/models")
         return response["models"]
 
@@ -411,24 +268,7 @@ class SignalClient:
         bf16: bool = True,
         gradient_checkpointing: bool = True,
     ) -> SignalRun:
-        """Create a new training run.
-
-        Args:
-            base_model: Base model name
-            lora_r: LoRA rank
-            lora_alpha: LoRA alpha
-            lora_dropout: LoRA dropout
-            lora_target_modules: Target modules for LoRA
-            optimizer: Optimizer type
-            learning_rate: Learning rate
-            weight_decay: Weight decay
-            max_seq_length: Maximum sequence length
-            bf16: Use bfloat16
-            gradient_checkpointing: Enable gradient checkpointing
-
-        Returns:
-            SignalRun instance
-        """
+        """creates a new training run."""
         config = RunConfig(
             base_model=base_model,
             lora_r=lora_r,
@@ -460,20 +300,7 @@ class SignalClient:
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
     ) -> ForwardBackwardResponse:
-        """Perform forward-backward pass.
-
-        Delegates to TrainingClient internally.
-
-        Args:
-            run_id: Run identifier
-            batch: List of training examples
-            accumulate: Whether to accumulate gradients
-            loss_fn: Loss function to use (causal_lm, dpo, reward_modeling, ppo)
-            loss_kwargs: Additional arguments for the loss function
-
-        Returns:
-            Response with loss and gradient stats
-        """
+        """perform forward-backward pass using training client"""
         training = self.training(run_id)
         return training.forward_backward(
             batch_data=batch,
@@ -487,17 +314,7 @@ class SignalClient:
         run_id: str,
         learning_rate: Optional[float] = None,
     ) -> OptimStepResponse:
-        """Apply optimizer step.
-
-        Delegates to TrainingClient internally.
-
-        Args:
-            run_id: Run identifier
-            learning_rate: Optional learning rate override
-
-        Returns:
-            Response with step metrics
-        """
+        """apply optimizer step using training client"""
         training = self.training(run_id)
         return training.optim_step(learning_rate=learning_rate)
 
@@ -510,21 +327,8 @@ class SignalClient:
         top_p: float = 0.9,
         return_logprobs: bool = False,
     ) -> List[str]:
-        """Generate samples.
-
-        Delegates to InferenceClient internally.
-
-        Args:
-            run_id: Run identifier
-            prompts: List of prompts
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            return_logprobs: Whether to return log probabilities
-
-        Returns:
-            List of generated texts
-        """
+        """sample using inference client"""
+        # TODO: check that this does this with the trained model so rollouts actually update
         inference = self.inference(run_id)
         return inference.sample(
             prompts=prompts,
@@ -541,19 +345,7 @@ class SignalClient:
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
     ) -> SaveStateResponse:
-        """Save model state.
-
-        Delegates to TrainingClient internally.
-
-        Args:
-            run_id: Run identifier
-            mode: Save mode ('adapter' or 'merged')
-            push_to_hub: Whether to push to HuggingFace Hub
-            hub_model_id: HuggingFace Hub model ID
-
-        Returns:
-            Response with artifact information
-        """
+        """save lora adapters or merged model to R2 using training client"""
         training = self.training(run_id)
         return training.save_checkpoint(
             mode=mode,
@@ -562,35 +354,14 @@ class SignalClient:
         )
 
     def get_run_status(self, run_id: str) -> RunStatus:
-        """Get run status.
-
-        Args:
-            run_id: Run identifier
-
-        Returns:
-            Run status information
-        """
         response_data = self._request("GET", f"/runs/{run_id}/status")
         return RunStatus(**response_data)
 
     def get_run_metrics(self, run_id: str) -> RunMetrics:
-        """Get run metrics.
-
-        Args:
-            run_id: Run identifier
-
-        Returns:
-            Run metrics
-        """
         response_data = self._request("GET", f"/runs/{run_id}/metrics")
         return RunMetrics(**response_data)
 
     def list_runs(self) -> List[Dict[str, Any]]:
-        """List all runs.
-
-        Returns:
-            List of runs
-        """
         response = self._request("GET", "/runs")
         return response["runs"]
 
@@ -600,16 +371,7 @@ class SignalClient:
         text: str | List[str],
         add_special_tokens: bool = True,
     ) -> TokenizeResponse:
-        """Tokenize text using the model's tokenizer.
-
-        Args:
-            run_id: Run identifier
-            text: Text string or list of strings to tokenize
-            add_special_tokens: Whether to add special tokens
-
-        Returns:
-            Response with token_ids and tokens
-        """
+        # TODO: i decided to keep this on the API... should maybe move to training or inference client
         response_data = self._request(
             "POST",
             f"/runs/{run_id}/tokenize",
@@ -622,15 +384,7 @@ class SignalClient:
         run_id: str,
         token_ids: List[int] | List[List[int]],
     ) -> DetokenizeResponse:
-        """Detokenize token IDs using the model's tokenizer.
-
-        Args:
-            run_id: Run identifier
-            token_ids: Token IDs (single list or list of lists)
-
-        Returns:
-            Response with decoded text
-        """
+        # TODO: i decided to keep this on the API... should maybe move to training or inference client
         response_data = self._request(
             "POST",
             f"/runs/{run_id}/detokenize",
@@ -639,26 +393,12 @@ class SignalClient:
         return DetokenizeResponse(**response_data)
 
     def get_tokenizer_info(self, run_id: str) -> TokenizerInfoResponse:
-        """Get tokenizer configuration information.
-
-        Args:
-            run_id: Run identifier
-
-        Returns:
-            Tokenizer information including vocab size and special tokens
-        """
+        """get the basic info, vocab size, and special tokens"""
         response_data = self._request("GET", f"/runs/{run_id}/tokenizer_info")
         return TokenizerInfoResponse(**response_data)
 
     def get_model_info(self, run_id: str) -> ModelInfoResponse:
-        """Get model architecture information.
-
-        Args:
-            run_id: Run identifier
-
-        Returns:
-            Model information including architecture and parameter counts
-        """
+        """model name and size"""
         response_data = self._request("GET", f"/runs/{run_id}/model_info")
         return ModelInfoResponse(**response_data)
 
@@ -668,16 +408,7 @@ class SignalClient:
         messages: List[Dict[str, str]],
         add_generation_prompt: bool = False,
     ) -> ApplyChatTemplateResponse:
-        """Apply the model's chat template to format messages.
-
-        Args:
-            run_id: Run identifier
-            messages: List of message dicts with 'role' and 'content'
-            add_generation_prompt: Whether to add generation prompt
-
-        Returns:
-            Response with formatted text and token_ids
-        """
+        # TODO: basically the same one as before, do we need to ship this?
         response_data = self._request(
             "POST",
             f"/runs/{run_id}/apply_chat_template",
@@ -688,31 +419,7 @@ class SignalClient:
     def training(
         self, run_id: str, timeout: int = 3600, max_retries: int = 3, **kwargs
     ) -> TrainingClient:
-        """Get specialized training client for a run.
-
-        Args:
-            run_id: Run identifier
-            timeout: Request timeout for training operations (default: 3600s)
-            max_retries: Number of retries for failed requests (default: 3)
-            **kwargs: Additional training client configuration
-
-        Returns:
-            TrainingClient instance with training-optimized settings
-
-        Example:
-            >>> client = SignalClient(api_key="sk-...")
-            >>> run = client.create_run(base_model="Qwen/Qwen2.5-3B")
-            >>> training = client.training(run.run_id, timeout=7200)
-            >>>
-            >>> # Fine-grained control over training
-            >>> for batch in dataloader:
-            >>>     result = training.forward_backward(batch)
-            >>>     if result['grad_norm'] < 100:
-            >>>         training.optim_step()
-            >>>
-            >>> # Or use convenience method
-            >>> training.train_batch(batch)
-        """
+        """get training client for a run"""
         return TrainingClient(
             run_id=run_id,
             api_key=self.api_key,
@@ -731,32 +438,7 @@ class SignalClient:
         batch_size: int = 1,
         **kwargs,
     ) -> InferenceClient:
-        """Get specialized inference client for a run.
-
-        Args:
-            run_id: Run identifier
-            step: Checkpoint step to use (latest if None)
-            timeout: Request timeout for inference operations (default: 30s)
-            batch_size: Batch size for inference (default: 1)
-            **kwargs: Additional inference client configuration
-
-        Returns:
-            InferenceClient instance with inference-optimized settings
-
-        Example:
-            >>> client = SignalClient(api_key="sk-...")
-            >>> inference = client.inference(
-            ...     run_id="run_123",
-            ...     step=100,
-            ...     batch_size=32
-            ... )
-            >>>
-            >>> # Optimized batched inference
-            >>> outputs = inference.batch_sample(
-            ...     prompts=["Hello", "World", ...],
-            ...     max_tokens=50
-            ... )
-        """
+        """get inference client for a run"""
         return InferenceClient(
             run_id=run_id,
             api_key=self.api_key,
@@ -764,6 +446,6 @@ class SignalClient:
             step=step,
             timeout=timeout,
             batch_size=batch_size,
-            session=self.session,  # Share session for connection pooling
+            session=self.session,
             **kwargs,
         )

@@ -16,18 +16,7 @@ VALID_GPU_TYPES = ["L40S", "A100", "A100-80GB", "H100", "T4", "A10G"]
 
 
 def validate_gpu_config(gpu_config: str, raise_http_exception: bool = False) -> bool:
-    """Validate GPU configuration format.
-    
-    Args:
-        gpu_config: GPU config string (e.g., "L40S:2")
-        raise_http_exception: If True, raise HTTPException; else raise GPUConfigError
-    
-    Returns:
-        True if valid
-    
-    Raises:
-        HTTPException or GPUConfigError depending on raise_http_exception
-    """
+    """validate GPU configuration format"""
     try:
         if not gpu_config or ":" not in gpu_config:
             raise GPUConfigError("GPU config must be in format 'gpu_type:count'")
@@ -63,7 +52,8 @@ class ModelInfo:
     hidden_size: Optional[int] = None
     num_layers: Optional[int] = None
 
-# Model registry with known parameter counts
+# TODO: double check context sizes
+# Model registry with known parameter counts and glm huggingface name
 MODEL_REGISTRY: Dict[str, ModelInfo] = {
     # LLaMA family
     "meta-llama/Llama-3.2-1B": ModelInfo(
@@ -102,11 +92,9 @@ MODEL_REGISTRY: Dict[str, ModelInfo] = {
 
 def get_model_info(model_name: str) -> Optional[ModelInfo]:
     """Get model information from registry with efficient lookup."""
-    # Direct lookup first (most common case)
     if model_name in MODEL_REGISTRY:
         return MODEL_REGISTRY[model_name]
 
-    # Partial match lookup (only if direct lookup fails)
     model_lower = model_name.lower()
     for key, info in MODEL_REGISTRY.items():
         if model_lower in key.lower() or key.lower() in model_lower:
@@ -116,7 +104,7 @@ def get_model_info(model_name: str) -> Optional[ModelInfo]:
     logger.warning(f"Model {model_name} not found in registry")
     return None
 
-
+# TODO: ask markus what gpu sizes he usually uses for different model types and add H100s and B200s here and everywhere else
 # Simple allocation rules based on model parameters
 GPU_ALLOCATION_RULES = [
     (1.0, "L40S:1"),       # < 1B params
@@ -132,15 +120,7 @@ def allocate_gpu_config(
     model_name: str,
     user_override: Optional[str] = None,
 ) -> str:
-    """Allocate GPU configuration based on model size.
-    
-    Args:
-        model_name: HuggingFace model name
-        user_override: Optional user-specified GPU config
-    
-    Returns:
-        GPU config string (e.g., "L40S:1")
-    """
+    """Allocate GPU configuration based on model size."""
     if user_override:
         validate_gpu_config(user_override)
         logger.info(f"Using user-specified GPU config: {user_override}")
@@ -160,9 +140,8 @@ def allocate_gpu_config(
             )
             return gpu_config
     
-    return "A100-80GB:8"  # Fallback for very large models
+    return "A100-80GB:8"  # Fallback for very large models TODO: make this 8 H100s
 
 
 def get_supported_models() -> Dict[str, ModelInfo]:
-    """Get all supported models in the registry."""
     return MODEL_REGISTRY.copy()

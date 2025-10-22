@@ -1108,7 +1108,7 @@ class TrainingSession:
 
     def _background_monitor(self):
         """Background thread for auto-checkpoint monitoring."""
-                logger.info("Background monitor thread started")
+        logger.info("Background monitor thread started")
 
         while self.should_monitor:
             time.sleep(60)  # Check every minute
