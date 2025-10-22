@@ -1098,7 +1098,7 @@ class TrainingSession:
         torch.save(self.optimizer.state_dict(), opt_path)
 
         self.last_checkpoint_step = self.current_step
-                logger.info(f"✓ Checkpoint saved at step {self.current_step}")
+        logger.info(f"✓ Checkpoint saved at step {self.current_step}")
 
         return str(checkpoint_path)
 
