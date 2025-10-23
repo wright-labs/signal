@@ -9,9 +9,9 @@ TrainingSession = modal.Cls.lookup("signal", "TrainingSession")
 # Create instance
 session = TrainingSession()
 
-print("=" * 80)
+
 print("TESTING STATEFUL TRAINING SESSION")
-print("=" * 80)
+
 
 # Test initialize
 print("\n1. Testing initialize...")
@@ -85,9 +85,9 @@ print(f"   Current step: {state['current_step']}")
 print(f"   Last checkpoint step: {state['last_checkpoint_step']}")
 
 # Performance summary
-print("\n" + "=" * 80)
+
 print("PERFORMANCE SUMMARY")
-print("=" * 80)
+
 print(f"Initialize (cold start):     {init_time:.2f}s")
 print(f"Forward-backward (1st):      {fb1_time:.2f}s")
 print(f"Optimizer step:              {opt_time:.2f}s")
@@ -102,4 +102,4 @@ else:
     print(f"\n⚠️  WARNING: Warm call took {fb2_time:.2f}s (expected <10s)")
 
 print("\n✅ All tests passed!")
-print("=" * 80)
+

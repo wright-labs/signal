@@ -35,9 +35,9 @@ TRAINING_DATA = [
 
 async def test_single_gpu():
     """Test training on single GPU with monitoring."""
-    print("\n" + "=" * 80)
+    
     print("TEST 1: SINGLE GPU TRAINING")
-    print("=" * 80)
+    
 
     # Get training session class
     TrainingSession = modal.Cls.from_name(
@@ -135,9 +135,9 @@ async def test_single_gpu():
 
 async def test_multi_gpu(num_gpus: int = 2):
     """Test training on multiple GPUs with monitoring."""
-    print("\n" + "=" * 80)
+    
     print(f"TEST 2: MULTI-GPU TRAINING ({num_gpus} GPUs)")
-    print("=" * 80)
+    
 
     # Note: This requires deploying TrainingSession with multi-GPU support
     print(f"\n⚠️  Multi-GPU requires deploying with gpu='l40s:{num_gpus}'")
@@ -187,9 +187,9 @@ def get_gpu_utilization():
 
 async def main():
     """Run multi-GPU tests."""
-    print("=" * 80)
+    
     print("MULTI-GPU TRAINING TEST")
-    print("=" * 80)
+    
     print(f"Model: {TEST_MODEL}")
     print(f"Training data: {len(TRAINING_DATA)} examples")
     print(f"Test prompts: {len(TEST_PROMPTS)}")
@@ -201,9 +201,9 @@ async def main():
     multi_gpu_results = await test_multi_gpu(num_gpus=2)
 
     # Summary
-    print("\n" + "=" * 80)
+    
     print("SUMMARY")
-    print("=" * 80)
+    
 
     if single_gpu_results:
         print("\n✓ Single GPU (L40S):")
@@ -230,7 +230,7 @@ async def main():
         print("  1. See instructions above")
         print("  2. Re-run this test after deployment")
 
-    print("\n" + "=" * 80)
+    
 
 
 if __name__ == "__main__":

@@ -16,9 +16,9 @@ from rewardsignal import SignalClient, TrainingClient, InferenceClient
 
 def test_simple_api():
     """Test Level 1: Simple API."""
-    print("=" * 80)
+    
     print("TEST 1: SIMPLE API (Level 1)")
-    print("=" * 80)
+    
 
     # Mock the session to avoid real HTTP calls
     with patch("frontier_signal.client.requests.Session") as mock_session_class:
@@ -76,9 +76,9 @@ def test_simple_api():
 
 def test_advanced_training_api():
     """Test Level 2: Advanced Training API."""
-    print("=" * 80)
+    
     print("TEST 2: ADVANCED TRAINING API (Level 2)")
-    print("=" * 80)
+    
 
     with patch("frontier_signal.client.requests.Session") as mock_session_class:
         mock_session = Mock()
@@ -137,9 +137,9 @@ def test_advanced_training_api():
 
 def test_advanced_inference_api():
     """Test Level 3: Advanced Inference API."""
-    print("=" * 80)
+    
     print("TEST 3: ADVANCED INFERENCE API (Level 3)")
-    print("=" * 80)
+    
 
     with patch("frontier_signal.client.requests.Session") as mock_session_class:
         mock_session = Mock()
@@ -213,9 +213,9 @@ def test_advanced_inference_api():
 
 def test_progressive_disclosure():
     """Test progressive disclosure pattern."""
-    print("=" * 80)
+    
     print("TEST 4: PROGRESSIVE DISCLOSURE PATTERN")
-    print("=" * 80)
+    
 
     with patch("frontier_signal.client.requests.Session") as mock_session_class:
         mock_session = Mock()
@@ -253,9 +253,9 @@ def test_progressive_disclosure():
 
 def test_type_safety():
     """Test type safety with specialized clients."""
-    print("=" * 80)
+    
     print("TEST 5: TYPE SAFETY")
-    print("=" * 80)
+    
 
     with patch("frontier_signal.client.requests.Session") as mock_session_class:
         mock_session = Mock()

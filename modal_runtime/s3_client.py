@@ -4,6 +4,8 @@ Supports both AWS S3 and Cloudflare R2 (zero egress costs).
 R2 credentials take precedence if set, otherwise falls back to S3.
 """
 
+# TODO: i'm gonna just use R2 so I might as well update some of this if it's too s3 specific
+
 import os
 import json
 from pathlib import Path
@@ -228,6 +230,9 @@ def generate_signed_url_for_prefix(
         bucket = get_s3_bucket_name()
 
     s3_uri = f"s3://{bucket}/{s3_prefix}"
+
+    # TODO: maybe do this stuff? this might be too aws specific
+    # TODO: why do I need to generate this again?
 
     # For now, we'll return the URI - in production you might want to:
     # 1. Create a zip file and upload it

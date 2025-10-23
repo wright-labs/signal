@@ -27,9 +27,9 @@ from modal_runtime.primitives import (
 def test_modal_primitives_e2e():
     """Test all Modal primitives end-to-end with a small model."""
 
-    print("\n" + "=" * 80)
+    
     print("Signal E2E Test - Modal Primitives")
-    print("=" * 80 + "\n")
+    
 
     # Setup
     registry = RunRegistry()
@@ -216,9 +216,9 @@ def test_modal_primitives_e2e():
     # Don't delete so we can inspect in Supabase
     print("   Run preserved in database for inspection")
 
-    print("\n" + "=" * 80)
+    
     print("✅ All tests passed! Signal primitives are working correctly.")
-    print("=" * 80 + "\n")
+    
 
     return True
 

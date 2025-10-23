@@ -91,9 +91,9 @@ def main():
 
 
 if __name__ == "__main__":
-    print("=" * 80)
+    
     print("Signal API - Supervised Fine-Tuning Example")
-    print("=" * 80)
+    
 
     # Run main example
     main()

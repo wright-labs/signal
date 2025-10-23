@@ -87,3 +87,6 @@ TRAINING_IMAGE = (
 
 # Inference image - use same as training for simplicity
 INFERENCE_IMAGE = TRAINING_IMAGE
+
+# TODO: seriously, i really need to figure out how to do this scalably
+# TODO: gonna read modal docs when I land

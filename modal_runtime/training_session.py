@@ -185,8 +185,6 @@ class TrainingSession:
         """
         try:
             self._update_activity()
-
-            logger.info("\n" + "=" * 80)
             logger.info("INITIALIZING TRAINING SESSION")
 
             logger.info(f"User: {user_id}")
@@ -362,7 +360,7 @@ class TrainingSession:
                 p.numel() for p in self.model.parameters() if p.requires_grad
             )
 
-            logger.info("\n" + "=" * 80)
+            
             logger.info("✓ INITIALIZATION COMPLETE")
 
             logger.info("Model loaded and ready in GPU memory")
@@ -408,9 +406,9 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("FORWARD-BACKWARD PASS")
-            logger.info(f"{'=' * 80}")
+            
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Batch size: {len(batch_data)}")
             logger.info(f"Loss function: {loss_fn}")
@@ -478,13 +476,13 @@ class TrainingSession:
             # Store loss for WandB logging in optim_step
             self.last_loss = metrics["loss"]
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("✓ FORWARD-BACKWARD COMPLETE")
             logger.info(
                 f"Loss: {metrics['loss']:.4f} | Grad Norm: {metrics['grad_norm']:.4f}"
             )
             logger.info(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
-            logger.info(f"{'=' * 80}")
+            
 
             return {
                 "status": "success",
@@ -521,9 +519,9 @@ class TrainingSession:
                     "Model/optimizer not initialized. Call initialize() first."
                 )
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("OPTIMIZER STEP")
-            logger.info(f"{'=' * 80}")
+            
             logger.info(f"Current step: {self.current_step}")
 
             # Override learning rate if provided
@@ -570,11 +568,11 @@ class TrainingSession:
                 except Exception as e:
                     logger.info(f"⚠ Failed to log to WandB: {e}")
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("✓ OPTIMIZER STEP COMPLETE")
             logger.info(f"New step: {self.current_step}")
             logger.info(f"Learning rate: {current_lr}")
-            logger.info(f"{'=' * 80}")
+            
 
             return {
                 "status": "success",
@@ -605,9 +603,9 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("GENERATING SAMPLES")
-            logger.info(f"{'=' * 80}")
+            
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Prompts: {len(prompts)}")
 
@@ -666,9 +664,9 @@ class TrainingSession:
             # Switch back to train mode
             model_to_use.train()
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS")
-            logger.info(f"{'=' * 80}")
+            
 
             return {
                 "status": "success",
@@ -708,9 +706,9 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("SAVING STATE")
-            logger.info(f"{'=' * 80}")
+            
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Mode: {mode}")
 
@@ -807,9 +805,9 @@ class TrainingSession:
             # Commit volume
             data_volume.commit()
 
-            logger.info(f"\n{'=' * 80}")
+            
             logger.info("✓ STATE SAVED")
-            logger.info(f"{'=' * 80}")
+            
 
             return result
 

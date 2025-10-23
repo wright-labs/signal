@@ -67,6 +67,8 @@ def print_gpu_stats():
 
 
 # TODO: check this, not sure if this is the correct way to do it
+# TODO: if i'm using accelerate, do I still need to do this?
+# TODO: pretty sure it's completely unused
 def setup_multi_gpu_model(model: Any, strategy: str = "data_parallel") -> Any:
     """Wrap model for multi-GPU using DataParallel."""
     if not torch.cuda.is_available():

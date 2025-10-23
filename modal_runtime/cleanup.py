@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 from modal_runtime.app import app, data_volume, VOLUME_CONFIG, api_secret
 
-
+# TODO: do i seriously need this
 def safe_api_call(
     url: str, json_data: dict, headers: dict, operation_name: str
 ) -> bool:
@@ -107,11 +107,11 @@ def cleanup_old_runs(
 
     Runs daily to clean up completed training runs older than retention_days.
     Artifacts remain in S3 for long-term storage."""
-    logger.info("=" * 80)
+    
     logger.info("Starting Modal Volume cleanup job")
     logger.info(f"Retention policy: {retention_days} days")
     logger.info(f"Dry run: {dry_run}")
-    logger.info("=" * 80)
+    
 
     # Get API URL from environment if not provided
     if api_url is None:
@@ -206,9 +206,7 @@ def cleanup_old_runs(
         logger.info("✓ Volume committed")
 
     # Summary
-    logger.info("\n" + "=" * 80)
     logger.info("Cleanup Summary")
-    logger.info("=" * 80)
     logger.info(f"Scanned: {len(all_runs)} runs")
     logger.info(f"Deleted: {deleted_count} runs")
     logger.info(f"Space freed: {total_bytes_freed / (1024**3):.2f} GB")
@@ -245,11 +243,11 @@ def cleanup_stale_runs(
     Uses the database's updated_at column which auto-updates on any API activity."""
     from supabase import create_client
 
-    logger.info("=" * 80)
+    
     logger.info("Starting stale run cleanup job")
     logger.info(f"Stale threshold: {stale_minutes} minutes")
     logger.info(f"Dry run: {dry_run}")
-    logger.info("=" * 80)
+    
 
     # Get Supabase credentials from environment
     supabase_url = os.environ.get("SUPABASE_URL")
@@ -329,12 +327,12 @@ def cleanup_stale_runs(
                     else:
                         charge_errors.append(run_id)
 
-            logger.info("\n" + "=" * 80)
+            
             logger.info(f"Marked {len(marked_runs)} runs as failed")
             logger.info(f"Charged {charged_count} runs successfully")
             if charge_errors:
                 logger.info(f"Failed to charge {len(charge_errors)} runs: {charge_errors}")
-            logger.info("=" * 80)
+            
 
             return {
                 "status": "success",
@@ -368,9 +366,9 @@ def run_cleanup_now(
         dry_run=dry_run,
     )
 
-    logger.info("\n" + "=" * 80)
+    
     logger.info("Cleanup Result:")
-    logger.info("=" * 80)
+    
     logger.info(f"Status: {result['status']}")
     logger.info(f"Scanned: {result['scanned']}")
     logger.info(f"Deleted: {result['deleted']}")
