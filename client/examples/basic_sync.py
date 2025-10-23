@@ -5,7 +5,6 @@ from rewardsignal import SignalClient
 # Initialize client
 client = SignalClient(
     api_key="sk-your-api-key-here",  # Replace with your API key
-    base_url="http://localhost:8000",  # Use production URL: https://api.frontier-signal.com
 )
 
 

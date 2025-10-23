@@ -32,7 +32,7 @@ client = SignalClient(api_key=API_KEY)
 
 - `SignalClient.__init__()` is called (`client/client.py:270-292`)
 - Creates a `requests.Session()` with authentication headers
-- Sets `base_url` to "https://api.frontier-signal.com"
+- Sets `base_url` to "https://signal-production-d2d8.up.railway.app"
 - Sets `timeout` to 300 seconds
 - Headers are set: `Authorization: Bearer {api_key}`, `Content-Type: application/json`
 
@@ -58,7 +58,7 @@ run = client.create_run(
 
 **API Request:**
 
-- HTTP POST to `https://api.frontier-signal.com/runs`
+- HTTP POST to `https://signal-production-d2d8.up.railway.app/runs`
 - Headers: `Authorization: Bearer sk-xxx`, `Content-Type: application/json`
 - Body: JSON with run configuration
 

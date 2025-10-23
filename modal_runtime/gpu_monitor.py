@@ -2,7 +2,9 @@
 
 import torch
 from typing import Dict, List, Any
+import logging
 
+logger = logging.getLogger(__name__)
 
 def get_gpu_stats() -> List[Dict[str, Any]]:
     """Get basic GPU memory stats."""
@@ -49,21 +51,19 @@ def print_gpu_stats():
     """Print GPU stats in a readable format."""
     stats = get_gpu_stats()
     if not stats:
-        print("No GPUs available")
+        logger.info("No GPUs available")
         return
 
-    print(f"\n{'=' * 60}")
-    print(f"GPU Stats ({len(stats)} GPU{'s' if len(stats) > 1 else ''})")
-    print(f"{'=' * 60}")
+    logger.info(f"GPU Stats ({len(stats)} GPU{'s' if len(stats) > 1 else ''})")
 
     for stat in stats:
-        print(f"GPU {stat['gpu_id']}: {stat['name']}")
-        print(
+        logger.info(f"GPU {stat['gpu_id']}: {stat['name']}")
+        logger.info(
             f"  Memory: {stat['memory_allocated_gb']:.2f} GB / {stat['memory_total_gb']:.2f} GB"
         )
-        print(f"  Utilization: {stat['utilization_percent']:.1f}%")
+        logger.info(f"  Utilization: {stat['utilization_percent']:.1f}%")
 
-    print(f"{'=' * 60}\n")
+    logger.info(f"{'=' * 60}\n")
 
 
 # TODO: check this, not sure if this is the correct way to do it
@@ -78,7 +78,7 @@ def setup_multi_gpu_model(model: Any, strategy: str = "data_parallel") -> Any:
         return model
 
     if strategy == "data_parallel":
-        print(f"Wrapping model with DataParallel ({num_gpus} GPUs)")
+        logger.info(f"Wrapping model with DataParallel ({num_gpus} GPUs)")
         return torch.nn.DataParallel(model)
     else:
         raise ValueError(

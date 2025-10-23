@@ -25,7 +25,7 @@ class InferenceClient:
         self,
         run_id: str,
         api_key: str,
-        base_url: str = "https://api.frontier-signal.com",
+        base_url: str = "https://signal-production-d2d8.up.railway.app",
         step: Optional[int] = None,
         timeout: int = 30,  # Fast timeout for inference
         max_retries: int = 5,  # More retries for transient failures

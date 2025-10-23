@@ -13,6 +13,9 @@ import os
 import torch
 from pathlib import Path
 from typing import Tuple, Optional, Any, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 # TODO: wait, I definitely want to kepe the base models on a permanent modal volume so I can quickly and easily load them no?
 def load_model_and_tokenizer(
@@ -56,7 +59,7 @@ def load_model_and_tokenizer(
         )
 
     # Load tokenizer
-    print(f"Loading tokenizer for {model_name}...")
+    logger.info(f"Loading tokenizer for {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -69,13 +72,13 @@ def load_model_and_tokenizer(
 
     # TODO: can just delete these prints right?
     # Load model
-    print(f"Loading model {model_name}...")
+    logger.info(f"Loading model {model_name}...")
     if quantization_config is not None:
-        print(f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)")
+        logger.info(f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)")
     else:
-        print("  - Mode: LoRA (full precision)")
-    print(f"  - Precision: {'bfloat16' if bf16 else 'float16'}")
-    print(f"  - Gradient checkpointing: {gradient_checkpointing}")
+        logger.info("  - Mode: LoRA (full precision)")
+    logger.info(f"  - Precision: {'bfloat16' if bf16 else 'float16'}")
+    logger.info(f"  - Gradient checkpointing: {gradient_checkpointing}")
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -88,7 +91,7 @@ def load_model_and_tokenizer(
     # CRITICAL: Prepare model based on quantization
     if quantization_config is not None:
         # QLoRA path: Need special preparation for gradient flow through quantized layers
-        print("Preparing model for k-bit training (QLoRA)...")
+        logger.info("Preparing model for k-bit training (QLoRA)...")
         model = prepare_model_for_kbit_training(
             model,
             use_gradient_checkpointing=gradient_checkpointing,
@@ -96,10 +99,10 @@ def load_model_and_tokenizer(
     else:
         # LoRA path: Standard gradient checkpointing if requested
         if gradient_checkpointing:
-            print("Enabling gradient checkpointing...")
+            logger.info("Enabling gradient checkpointing...")
             model.gradient_checkpointing_enable()
 
-    print("✓ Model loaded successfully")
+    logger.info("✓ Model loaded successfully")
     return model, tokenizer
 
 
@@ -127,8 +130,8 @@ def apply_lora_to_model(
             "down_proj",  # MLP down projection
         ]
 
-    print(f"Applying LoRA adapters (r={lora_r}, alpha={lora_alpha})...")
-    print(f"  - Target modules: {', '.join(lora_target_modules)}")
+    logger.info(f"Applying LoRA adapters (r={lora_r}, alpha={lora_alpha})...")
+    logger.info(f"  - Target modules: {', '.join(lora_target_modules)}")
 
     lora_config = LoraConfig(
         r=lora_r,
@@ -142,7 +145,7 @@ def apply_lora_to_model(
     model = get_peft_model(model, lora_config)
 
     # Print trainable parameters for verification
-    print("\nTrainable parameters:")
+    logger.info("\nTrainable parameters:")
     model.print_trainable_parameters()
 
     # Verify gradient flow is enabled
@@ -155,7 +158,7 @@ def apply_lora_to_model(
             "This should never happen. Check LoRA configuration."
         )
 
-    print(
+    logger.info(
         f"✓ LoRA adapters applied successfully ({len(trainable_params)} trainable params)"
     )
 
@@ -174,7 +177,7 @@ def load_lora_checkpoint(
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    print(f"Loading LoRA checkpoint from {checkpoint_path}...")
+    logger.info(f"Loading LoRA checkpoint from {checkpoint_path}...")
 
     # Check for PEFT format (adapter_config.json)
     adapter_config = checkpoint_path / "adapter_config.json"
@@ -193,6 +196,6 @@ def load_lora_checkpoint(
         str(checkpoint_path),
         is_trainable=True,
     )
-    print("✓ Loaded PEFT checkpoint")
+    logger.info("✓ Loaded PEFT checkpoint")
 
     return model

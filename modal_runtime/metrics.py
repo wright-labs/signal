@@ -6,7 +6,9 @@ Uses WandB for experiment tracking (already installed in app.py).
 
 import time
 from typing import Dict, Any, Optional, List
+import logging
 
+logger = logging.getLogger(__name__)
 
 class MetricsCollector:
     """Simple metrics collector for training runs."""
@@ -37,7 +39,7 @@ class MetricsCollector:
 
                 self._wandb = wandb
             except Exception as e:
-                print(f"Failed to import WandB: {e}")
+                logger.info(f"Failed to import WandB: {e}")
                 self.enable_wandb = False
 
         return self._wandb

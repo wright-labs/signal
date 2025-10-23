@@ -24,7 +24,7 @@ class TrainingClient:
         self,
         run_id: str,
         api_key: str,
-        base_url: str = "https://api.frontier-signal.com",
+        base_url: str = "https://signal-production-d2d8.up.railway.app",
         timeout: int = 3600,  # 1 hour for training operations
         max_retries: int = 3,
         session: Optional[requests.Session] = None,

@@ -8,7 +8,6 @@ async def main():
     # Use async context manager for automatic cleanup
     async with AsyncSignalClient(
         api_key="sk-your-api-key-here",  # Replace with your API key
-        base_url="http://localhost:8000",  # Use production URL: https://api.frontier-signal.com
     ) as client:
         # List available models
         print("Fetching available models...")

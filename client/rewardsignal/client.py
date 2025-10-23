@@ -157,7 +157,7 @@ class SignalClient:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://api.frontier-signal.com", # TODO: hardcode the default url, 
+        base_url: str = "https://signal-production-d2d8.up.railway.app",
         timeout: int = 300,
     ):
         self.api_key = api_key

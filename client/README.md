@@ -23,7 +23,7 @@ from rewardsignal import SignalClient
 # Initialize client
 client = SignalClient(
     api_key="sk-...",  # Your API key
-    base_url="https://api.frontier-signal.com"
+    base_url="https://signal-production-d2d8.up.railway.app"
 )
 
 # List available models
@@ -76,7 +76,7 @@ async def train():
     # Use async context manager for automatic cleanup
     async with AsyncSignalClient(
         api_key="sk-...",
-        base_url="https://api.frontier-signal.com"
+        base_url="https://signal-production-d2d8.up.railway.app"
     ) as client:
         # Create run
         run = await client.create_run(
@@ -132,7 +132,7 @@ with SignalClient(api_key="sk-...") as client:
 ```python
 SignalClient(
     api_key: str,
-    base_url: str = "https://api.frontier-signal.com",
+    base_url: str = "https://signal-production-d2d8.up.railway.app",
     timeout: int = 300,
 )
 ```

@@ -84,3 +84,6 @@ Thumbs.db
 # misc stuff that just makes it look nicer
 scripts/
 .cursor/
+
+# Ruff
+*.ruff_cache
