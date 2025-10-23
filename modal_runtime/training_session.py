@@ -41,7 +41,7 @@ from modal_runtime.gpu_monitor import (
     image=TRAINING_IMAGE,
     volumes=VOLUME_CONFIG,
     secrets=[huggingface_secret, s3_secret],
-    gpu="L40S:2",  # Can be overridden at runtime
+    gpu="L40S:2",  # Can be overridden at runtime TODO: can this actually? pls god i need internet to read the docs
     timeout=2 * HOURS,
     scaledown_window=20 * 60,  # 20 minutes idle before shutdown
 )
