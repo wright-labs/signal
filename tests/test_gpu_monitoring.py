@@ -43,7 +43,6 @@ async def main():
 
     # Run 5 training steps with timing
     print("\n3. Running 5 training iterations...")
-    print("-" * 80)
 
     for i in range(5):
         # Forward-backward with timing
@@ -99,8 +98,6 @@ async def main():
 
     # Final state
     final_state = await session.get_state.remote.aio()
-
-    print("SUMMARY")
 
     print(f"✓ Initialization: {init_time:.2f}s (cold start)")
     print("✓ Average iteration: ~0.5-1s (warm, model stays loaded!)")

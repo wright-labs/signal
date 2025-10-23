@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
+# TODO: isn't ths writing to modal volumes? i need to write to R2 and pull from R2??
 def save_lora_checkpoint(
     model: Any,
     save_path: str,
@@ -55,7 +55,7 @@ def save_merged_model(
 
     logger.info(f"✓ Merged model saved to {save_path}")
 
-
+# TODO: if i pick something up from before and not in the same training session, don't I need to need the run id or something?
 def find_latest_checkpoint(
     lora_adapters_path: Path,
     target_step: Optional[int] = None,

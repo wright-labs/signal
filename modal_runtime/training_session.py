@@ -61,7 +61,7 @@ class TrainingSession:
     last_checkpoint_step: int = 0
     auto_checkpoint_interval: int = 100
     accumulation_count: int = 0
-    accumulation_steps: int = 1
+    accumulation_steps: int = 1 # TODO: where is this set again? if someone says yes to accumulation, how do i do this in the repo
     last_activity_time: float = None
     should_monitor: bool = False
     monitor_thread: threading.Thread = None
@@ -257,6 +257,7 @@ class TrainingSession:
 
             # Check if resuming from checkpoint
             if resume_from_step is not None:
+                # TODO: if i pick something up from before and not in the same training session, don't I need to need the run id or something?
                 checkpoint_path = find_latest_checkpoint(
                     paths["lora_adapters"], target_step=resume_from_step
                 )
@@ -298,6 +299,9 @@ class TrainingSession:
             # Load checkpoint if resuming
             if resume_from_step is not None:
                 logger.info(f"\nLoading checkpoint from step {resume_from_step}...")
+                # TODO: if i pick something up from before and not in the same training session, don't I need to need the run id or something?
+                # TODO: how is this delineated by user?
+                # TODO: isn't ths writing to modal volumes? i need to write to R2 and pull from R2??
                 checkpoint_path = find_latest_checkpoint(
                     paths["lora_adapters"], target_step=resume_from_step
                 )
@@ -323,6 +327,7 @@ class TrainingSession:
                     lr=learning_rate,
                     weight_decay=weight_decay,
                 )
+                # TODO: add muon, and maybe even allow users to choose any torch.optim?
             else:
                 raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -391,14 +396,7 @@ class TrainingSession:
         loss_fn: str = "causal_lm",
         loss_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Compute forward and backward pass.
-
-        This uses the already-loaded model from initialize().
-        No model loading happens here - just pure training!
-
-        Returns:
-            Dict with loss, metrics, and current step
-        """
+        """compute forward and backward pass"""
         try:
             self._update_activity()
 
@@ -422,7 +420,7 @@ class TrainingSession:
             # Set model to training mode
             self.model.train()
 
-            # Move batch to device (Accelerate handles this)
+            # Move batch to device (Accelerate handles this) # TODO: if it handles it, why are we writing it here?
             batch = {
                 k: v.to(self.accelerator.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
@@ -458,7 +456,7 @@ class TrainingSession:
                     float("inf"),  # No clipping, just compute norm
                 )
 
-            # Track gradient accumulation
+            # Track gradient accumulation TODO: just need to review how I do this again and where I set the accumulation setting
             self.accumulation_count += 1
             if self.accumulation_count >= self.accumulation_steps:
                 self.accumulation_count = 0
@@ -501,14 +499,7 @@ class TrainingSession:
         learning_rate: Optional[float] = None,
         grad_clip: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Apply optimizer update.
-
-        This uses the already-loaded optimizer from initialize().
-        No optimizer creation or loading happens here - just the update!
-
-        Returns:
-            Dict with new step number and metrics
-        """
+        """apply optimizer update"""
         try:
             self._update_activity()
 
@@ -593,7 +584,7 @@ class TrainingSession:
         top_k: Optional[int] = None,
         return_logprobs: bool = False,
     ) -> Dict[str, Any]:
-        """Generate text samples."""
+        """generate text samples"""
         try:
             self._update_activity()
 
@@ -809,11 +800,7 @@ class TrainingSession:
 
     @modal.method()
     def get_state(self) -> Dict[str, Any]:
-        """Get current session state.
-
-        Returns:
-            Dict with session information
-        """
+        """get current session state"""
         gpu_summary = get_gpu_summary() if torch.cuda.is_available() else {}
 
         return {
@@ -836,7 +823,7 @@ class TrainingSession:
     def tokenize(
         self, texts: List[str], add_special_tokens: bool = True
     ) -> Dict[str, Any]:
-        """Tokenize text(s) using the model's tokenizer."""
+        """tokenize text using the model's tokenizer"""
         self._update_activity()
 
         if self.tokenizer is None:
@@ -855,7 +842,7 @@ class TrainingSession:
 
     @modal.method()
     def detokenize(self, token_ids) -> Dict[str, Any]:
-        """Detokenize token IDs to text."""
+        """detokenize token IDs to text"""
         self._update_activity()
 
         if self.tokenizer is None:
@@ -869,7 +856,7 @@ class TrainingSession:
 
     @modal.method()
     def get_tokenizer_info(self) -> Dict[str, Any]:
-        """Get tokenizer configuration."""
+        """get tokenizer configuration"""
         self._update_activity()
 
         if self.tokenizer is None:
@@ -892,7 +879,7 @@ class TrainingSession:
 
     @modal.method()
     def get_model_info(self) -> Dict[str, Any]:
-        """Get model architecture information."""
+        """get model architecture information"""
         self._update_activity()
 
         if self.model is None:
@@ -919,11 +906,12 @@ class TrainingSession:
             else None,
         }
 
+    # TODO: am i stupid why tf do we do this again?
     @modal.method()
     def apply_chat_template(
         self, messages: List[Dict[str, str]], add_generation_prompt: bool = False
     ) -> Dict[str, Any]:
-        """Apply chat template to messages."""
+        """apply chat template to messages"""
         self._update_activity()
 
         if self.tokenizer is None:
@@ -979,6 +967,7 @@ class TrainingSession:
             "dimensions": len(embeddings_list[0]) if embeddings_list else 0,
         }
 
+    # TODO: why do I only have one for GRPO? don't I need one for the others? do i even need this or can i just integrate w willcbb verifiers?
     @modal.method()
     def train_grpo_step(
         self,
@@ -1076,7 +1065,7 @@ class TrainingSession:
         # Unwrap model (Accelerate wraps it)
         model_to_save = self.accelerator.unwrap_model(self.model)
 
-        # Save LoRA checkpoint (PEFT handles this)
+        # Save LoRA checkpoint (PEFT handles this) TODO: once again, isn't this saving to modal volume? don't i need it in r2 and also volume
         model_to_save.save_pretrained(checkpoint_path)
 
         # Save tokenizer
