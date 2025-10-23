@@ -13,9 +13,8 @@ from rewardsignal import SignalClient
 
 def print_section(title: str):
     """Print a section header."""
-    
+
     print(f"  {title}")
-    
 
 
 def run_single_gpu_test(client: SignalClient):

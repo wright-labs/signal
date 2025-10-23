@@ -24,9 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def test_signal_api_e2e():
     """Test Signal API end-to-end."""
 
-    
     print("Signal E2E Test - Via API")
-    
 
     # Configuration
     API_BASE_URL = os.getenv("SIGNAL_API_URL", "http://localhost:8000")
@@ -247,9 +245,8 @@ def test_signal_api_e2e():
     except Exception as e:
         print(f"   ⚠ Failed to get metrics: {e}")
 
-    
     print("✅ All API tests passed! Signal is working correctly.")
-    
+
     print(f"Run ID: {run_id}")
     print(
         "You can view this run in the Supabase database or in the frontend at /signal"

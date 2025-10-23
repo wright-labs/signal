@@ -132,7 +132,7 @@ class TrainingSession:
 
         torch.cuda.empty_cache()
         logger.info("✓ GPU memory cleaned up")
-        
+
         # Finish WandB run if active
         if self.wandb_run:
             try:
@@ -140,7 +140,7 @@ class TrainingSession:
                 logger.info("✓ WandB run finished")
             except Exception as e:
                 logger.warning(f"⚠ Failed to finish WandB run: {e}")
-        
+
         logger.info("✓ Container shutdown complete")
 
     # TODO: check where this is called and if base_model names is validated from the set
@@ -233,11 +233,11 @@ class TrainingSession:
                     import wandb
                     import os
                     from datetime import datetime
-                    
+
                     # Create experiment name: model_datetime
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     experiment_name = f"{base_model.replace('/', '_')}_{timestamp}"
-                    
+
                     # Initialize WandB
                     os.environ["WANDB_API_KEY"] = integrations["wandb"]
                     self.wandb_run = wandb.init(
@@ -360,7 +360,6 @@ class TrainingSession:
                 p.numel() for p in self.model.parameters() if p.requires_grad
             )
 
-            
             logger.info("✓ INITIALIZATION COMPLETE")
 
             logger.info("Model loaded and ready in GPU memory")
@@ -406,9 +405,8 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            
             logger.info("FORWARD-BACKWARD PASS")
-            
+
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Batch size: {len(batch_data)}")
             logger.info(f"Loss function: {loss_fn}")
@@ -472,17 +470,17 @@ class TrainingSession:
                 if isinstance(grad_norm, float)
                 else grad_norm.item(),
             }
-            
+
             # Store loss for WandB logging in optim_step
             self.last_loss = metrics["loss"]
 
-            
             logger.info("✓ FORWARD-BACKWARD COMPLETE")
             logger.info(
                 f"Loss: {metrics['loss']:.4f} | Grad Norm: {metrics['grad_norm']:.4f}"
             )
-            logger.info(f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}")
-            
+            logger.info(
+                f"Accumulation: {self.accumulation_count}/{self.accumulation_steps}"
+            )
 
             return {
                 "status": "success",
@@ -519,9 +517,8 @@ class TrainingSession:
                     "Model/optimizer not initialized. Call initialize() first."
                 )
 
-            
             logger.info("OPTIMIZER STEP")
-            
+
             logger.info(f"Current step: {self.current_step}")
 
             # Override learning rate if provided
@@ -556,23 +553,23 @@ class TrainingSession:
                 checkpoint_saved = True
 
             current_lr = self.optimizer.param_groups[0]["lr"]
-            
+
             # Log to WandB if initialized
             if self.wandb_run:
                 try:
-                    self.wandb_run.log({
-                        "train/loss": self.last_loss,
-                        "train/learning_rate": current_lr,
-                        "train/step": self.current_step,
-                    })
+                    self.wandb_run.log(
+                        {
+                            "train/loss": self.last_loss,
+                            "train/learning_rate": current_lr,
+                            "train/step": self.current_step,
+                        }
+                    )
                 except Exception as e:
                     logger.info(f"⚠ Failed to log to WandB: {e}")
 
-            
             logger.info("✓ OPTIMIZER STEP COMPLETE")
             logger.info(f"New step: {self.current_step}")
             logger.info(f"Learning rate: {current_lr}")
-            
 
             return {
                 "status": "success",
@@ -603,9 +600,8 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            
             logger.info("GENERATING SAMPLES")
-            
+
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Prompts: {len(prompts)}")
 
@@ -664,9 +660,7 @@ class TrainingSession:
             # Switch back to train mode
             model_to_use.train()
 
-            
             logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS")
-            
 
             return {
                 "status": "success",
@@ -706,9 +700,8 @@ class TrainingSession:
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            
             logger.info("SAVING STATE")
-            
+
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Mode: {mode}")
 
@@ -805,9 +798,7 @@ class TrainingSession:
             # Commit volume
             data_volume.commit()
 
-            
             logger.info("✓ STATE SAVED")
-            
 
             return result
 

@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware # TODO: do i need starlette?
+from starlette.middleware.base import BaseHTTPMiddleware  # TODO: do i need starlette?
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -33,6 +33,7 @@ from api.auth import AuthManager, get_client_ip  # noqa: E402
 from api.registry import RunRegistry  # noqa: E402
 from api.models import ModelRegistry  # noqa: E402
 from api.logging_config import security_logger  # noqa: E402
+
 # from api.openai_compat import router as openai_router TODO: i should prob ship w verifiers integrations
 from api.frontier_client import get_frontier_client  # noqa: E402
 from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
@@ -80,12 +81,13 @@ def get_training_session(run_id: str, gpu_config: str = "L40S:1"):
             _training_session_cls = modal.Cls.from_name(
                 "signal", "TrainingSession", environment_name="main"
             )
-        
+
         # Return new instance (Modal handles routing by run_id)
         return _training_session_cls()
 
     except Exception as e:
         import traceback
+
         logger.error(f"Failed to lookup TrainingSession class: {e}")
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
@@ -127,7 +129,7 @@ async def lifespan(app: FastAPI):
     # Start background cleanup task for futures
     import asyncio
     from api.future_store import cleanup_expired_futures
-    
+
     # TODO: dig into this more. why do we yield at the end again?
     async def cleanup_loop():
         while True:
@@ -138,7 +140,7 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Cleaned up {count} expired futures")
             except Exception as e:
                 logger.error(f"Error in future cleanup: {e}")
-    
+
     cleanup_task = asyncio.create_task(cleanup_loop())
 
     yield
@@ -149,7 +151,7 @@ async def lifespan(app: FastAPI):
         await cleanup_task
     except asyncio.CancelledError:
         pass
-    
+
     logger.info("🛑 Shutting down Signal API...")
     from api.supabase_client import get_supabase
 
@@ -224,6 +226,7 @@ logging.basicConfig(
 
 # AUTHENTICATIONs
 
+
 async def verify_auth(
     authorization: Optional[str] = Header(None), request: Request = None
 ) -> str:
@@ -281,6 +284,7 @@ async def get_authorized_run(run_id: str, user_id: str) -> Dict[str, Any]:
     if run["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Unauthorized")
     return run
+
 
 async def check_and_charge_incremental(
     run_id: str,
@@ -686,7 +690,7 @@ async def create_run(
 
         # Get model config (verify model exists)
         _ = model_registry.get_model(config.base_model)
-        
+
         # Use auto-allocation logic
         from api.gpu_allocator import (
             allocate_gpu_config,
@@ -696,9 +700,7 @@ async def create_run(
         gpu_config = allocate_gpu_config(
             model_name=config.base_model, user_override=config.gpu_config
         )
-        logger.info(
-            f"Allocated GPU config: {gpu_config} for model {config.base_model}"
-        )
+        logger.info(f"Allocated GPU config: {gpu_config} for model {config.base_model}")
 
         # Validate GPU config format
         validate_gpu_config(gpu_config, raise_http_exception=True)
@@ -735,7 +737,7 @@ async def create_run(
 
         # Fetch user integrations from Frontier Backend
         integrations = await frontier_client.get_integrations(user_id)
-        
+
         # Create run in registry
         run_id = run_registry.create_run(
             user_id=user_id,
@@ -776,9 +778,7 @@ async def create_run(
         except Exception as modal_error:
             # CRITICAL: Clean up failed run to free up concurrent run slot
             run_registry.update_run(run_id, status="failed")
-            logger.error(
-                f"Modal initialization failed for run {run_id}: {modal_error}"
-            )
+            logger.error(f"Modal initialization failed for run {run_id}: {modal_error}")
             raise HTTPException(
                 status_code=500,
                 detail="Failed to initialize training infrastructure. Please try again.",

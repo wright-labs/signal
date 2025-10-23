@@ -31,7 +31,10 @@ class RunConfig(BaseModel):
         0.01, ge=0.0, le=1.0, description="Weight decay (0.0-1.0)"
     )
     max_seq_length: int = Field(
-        2048, ge=128, le=8192, description="Maximum sequence length (128-8192)" # TODO: maybe set a much higher max length?
+        2048,
+        ge=128,
+        le=8192,
+        description="Maximum sequence length (128-8192)",  # TODO: maybe set a much higher max length?
     )
     bf16: bool = Field(True, description="Use bfloat16 precision")
     gradient_checkpointing: bool = Field(
@@ -43,7 +46,11 @@ class RunConfig(BaseModel):
     def validate_gpu_config(cls, v: Optional[str]) -> Optional[str]:
         """Validate GPU configuration format."""
         if v is not None:
-            from api.gpu_allocator import validate_gpu_config as validate_gpu_config_func, GPUConfigError
+            from api.gpu_allocator import (
+                validate_gpu_config as validate_gpu_config_func,
+                GPUConfigError,
+            )
+
             try:
                 validate_gpu_config_func(v, raise_http_exception=False)
             except GPUConfigError as e:
@@ -73,6 +80,7 @@ class RunResponse(BaseModel):
     status: str
     created_at: str
     config: Dict[str, Any]
+
 
 # TODO: maybe set a much higher max length?
 class TrainingExample(BaseModel):
@@ -190,7 +198,10 @@ class ForwardBackwardRequest(BaseModel):
     """Request for forward-backward pass."""
 
     batch_data: List[TrainingExample] = Field(
-        ..., min_items=1, max_items=128, description="List of training examples (1-128)" # TODO: once again, should probably allow larger batch sizes?
+        ...,
+        min_items=1,
+        max_items=128,
+        description="List of training examples (1-128)",  # TODO: once again, should probably allow larger batch sizes?
     )
     accumulate: bool = Field(
         False, description="Accumulate gradients instead of replacing"
@@ -267,6 +278,7 @@ class ForwardBackwardResponse(BaseModel):
 
 class OptimStepRequest(BaseModel):
     """Request for optimizer step."""
+
     # TODO: should probably make a learning rate scheduler?
     learning_rate: Optional[float] = Field(
         None, description="Override learning rate for this step"
@@ -319,7 +331,9 @@ class SaveStateResponse(BaseModel):
 
     artifact_uri: str  # Local path (backward compatibility) # TODO: do i need this anymore with R2?
     local_path: Optional[str] = None  # Explicit local path
-    checkpoint_path: str  # Deprecated, use local_path # TODO: do i need this anymore with R2?
+    checkpoint_path: (
+        str  # Deprecated, use local_path # TODO: do i need this anymore with R2?
+    )
     s3_uri: Optional[str] = None  # S3 URI for permanent storage
     download_url: Optional[str] = None  # Pre-signed S3 download URL
     download_expires_at: Optional[str] = None  # Expiration timestamp for download URL
@@ -433,6 +447,7 @@ class ModelInfoResponse(BaseModel):
     )
     chat_template: Optional[str] = Field(None, description="Chat template if available")
 
+
 # TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateRequest(BaseModel):
     """Request for applying chat template."""
@@ -443,6 +458,7 @@ class ApplyChatTemplateRequest(BaseModel):
     add_generation_prompt: bool = Field(
         False, description="Whether to add generation prompt at the end"
     )
+
 
 # TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateResponse(BaseModel):

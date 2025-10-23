@@ -10,6 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class MetricsCollector:
     """Simple metrics collector for training runs."""
 

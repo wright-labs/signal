@@ -1,7 +1,7 @@
 """Automatic GPU allocation based on model size and memory requirements."""
 
 import logging
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 class GPUConfigError(ValueError):
     """Raised when GPU config is invalid."""
+
     pass
 
 
@@ -20,26 +21,28 @@ def validate_gpu_config(gpu_config: str, raise_http_exception: bool = False) -> 
     try:
         if not gpu_config or ":" not in gpu_config:
             raise GPUConfigError("GPU config must be in format 'gpu_type:count'")
-        
+
         gpu_type, count_str = gpu_config.rsplit(":", 1)
-        
+
         if gpu_type not in VALID_GPU_TYPES:
             raise GPUConfigError(
                 f"GPU type '{gpu_type}' not supported. "
                 f"Valid types: {', '.join(VALID_GPU_TYPES)}"
             )
-        
+
         count = int(count_str)
         if not 1 <= count <= 8:
             raise GPUConfigError("GPU count must be between 1 and 8")
-        
+
         return True
-    
+
     except GPUConfigError as e:
         if raise_http_exception:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=400, detail=str(e))
         raise
+
 
 @dataclass
 class ModelInfo:
@@ -51,6 +54,7 @@ class ModelInfo:
     context_length: int = 2048
     hidden_size: Optional[int] = None
     num_layers: Optional[int] = None
+
 
 # TODO: double check context sizes
 # Model registry with known parameter counts and glm huggingface name
@@ -104,15 +108,16 @@ def get_model_info(model_name: str) -> Optional[ModelInfo]:
     logger.warning(f"Model {model_name} not found in registry")
     return None
 
+
 # TODO: ask markus what gpu sizes he usually uses for different model types and add H100s and B200s here and everywhere else
 # Simple allocation rules based on model parameters
 GPU_ALLOCATION_RULES = [
-    (1.0, "L40S:1"),       # < 1B params
-    (7.0, "L40S:1"),       # 1-7B params
-    (13.0, "A100-80GB:1"), # 7-13B params
-    (30.0, "A100-80GB:2"), # 13-30B params
-    (70.0, "A100-80GB:4"), # 30-70B params
-    (float('inf'), "A100-80GB:8"),  # > 70B params
+    (1.0, "L40S:1"),  # < 1B params
+    (7.0, "L40S:1"),  # 1-7B params
+    (13.0, "A100-80GB:1"),  # 7-13B params
+    (30.0, "A100-80GB:2"),  # 13-30B params
+    (70.0, "A100-80GB:4"),  # 30-70B params
+    (float("inf"), "A100-80GB:8"),  # > 70B params
 ]
 
 
@@ -125,21 +130,19 @@ def allocate_gpu_config(
         validate_gpu_config(user_override)
         logger.info(f"Using user-specified GPU config: {user_override}")
         return user_override
-    
+
     model_info = get_model_info(model_name)
     if model_info is None:
         logger.warning(f"Unknown model {model_name}, using default GPU")
         return "L40S:1"
-    
+
     params = model_info.parameters_billions
-    
+
     for max_params, gpu_config in GPU_ALLOCATION_RULES:
         if params <= max_params:
-            logger.info(
-                f"Allocated {gpu_config} for {model_name} ({params}B params)"
-            )
+            logger.info(f"Allocated {gpu_config} for {model_name} ({params}B params)")
             return gpu_config
-    
+
     return "A100-80GB:8"  # Fallback for very large models TODO: make this 8 H100s
 
 

@@ -229,9 +229,7 @@ def example_with_learning_rate_schedule():
 
 
 if __name__ == "__main__":
-    
     print("Signal API - Supervised Fine-Tuning Example")
-    
 
     # Run main example
     main()

@@ -136,7 +136,7 @@ class SignalRun:
     def get_model_info(self) -> ModelInfoResponse:
         """returns model name and size"""
         return self.client.get_model_info(self.run_id)
-    
+
     # TODO: maybe don't ship the chat template thing
     def apply_chat_template(
         self,

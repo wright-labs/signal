@@ -17,6 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 # TODO: wait, I definitely want to kepe the base models on a permanent modal volume so I can quickly and easily load them no?
 def load_model_and_tokenizer(
     model_name: str,
@@ -74,7 +75,9 @@ def load_model_and_tokenizer(
     # Load model
     logger.info(f"Loading model {model_name}...")
     if quantization_config is not None:
-        logger.info(f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)")
+        logger.info(
+            f"  - Mode: QLoRA ({'4-bit' if load_in_4bit else '8-bit'} quantization)"
+        )
     else:
         logger.info("  - Mode: LoRA (full precision)")
     logger.info(f"  - Precision: {'bfloat16' if bf16 else 'float16'}")

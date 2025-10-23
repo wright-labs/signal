@@ -7,6 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def get_run_paths(
     user_id: str, run_id: str, base_path: str = "/data"
 ) -> Dict[str, Path]:

@@ -14,9 +14,7 @@ TRAINING_DATA = [
 
 
 async def main():
-    
     print("MULTI-GPU TEST: Qwen 2.5 1.5B on 2x L40S")
-    
 
     # Get training session
     print("\n1. Getting training session...")
@@ -134,14 +132,12 @@ async def main():
         print(f"  Allocated: {gpu_summary.get('total_allocated_gb', 0):.2f} GB")
         print(f"  Avg utilization: {gpu_summary.get('avg_memory_percent', 0):.1f}%")
 
-    
     print("✅ MULTI-GPU TEST PASSED!")
-    
+
     print(f"Model: Qwen 2.5 1.5B ({result['trainable_params']:,} LoRA params)")
     print("GPUs: 2x L40S (DataParallel)")
     print(f"Performance: {avg_time:.3f}s per iteration")
     print(f"Loss improved: {losses[0]:.4f} → {losses[-1]:.4f}")
-    
 
 
 if __name__ == "__main__":

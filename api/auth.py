@@ -83,19 +83,21 @@ class AuthManager:
                                 .execute()
                             )
                             if not user_check.data:
-                                logger.warning(
-                                    f"API key for deleted user: {user_id}"
-                                )
+                                logger.warning(f"API key for deleted user: {user_id}")
                                 await self._normalize_timing(start_time)
                                 return None
                         except (ConnectionError, TimeoutError) as e:
                             # Network errors are acceptable - fail closed
-                            logger.error(f"Database connection failed during user verification: {e}")
+                            logger.error(
+                                f"Database connection failed during user verification: {e}"
+                            )
                             await self._normalize_timing(start_time)
                             return None
                         except Exception as e:
                             # Unexpected errors should be investigated
-                            logger.exception(f"Unexpected error verifying user existence: {e}")
+                            logger.exception(
+                                f"Unexpected error verifying user existence: {e}"
+                            )
                             await self._normalize_timing(start_time)
                             return None
 
@@ -106,10 +108,14 @@ class AuthManager:
                             ).eq("id", key_data["id"]).execute()
                         except (ConnectionError, TimeoutError):
                             # Non-critical update, acceptable to skip
-                            logger.debug(f"Skipped last_used update due to connection issue")
+                            logger.debug(
+                                "Skipped last_used update due to connection issue"
+                            )
                         except Exception as e:
                             # Unexpected errors should be logged with full context
-                            logger.exception(f"Unexpected error updating last_used for key {key_data['id']}: {e}")
+                            logger.exception(
+                                f"Unexpected error updating last_used for key {key_data['id']}: {e}"
+                            )
 
                             await self._normalize_timing(start_time, target_ms=50)
                             return user_id
@@ -175,7 +181,9 @@ class AuthManager:
                     await self._normalize_timing(start_time)
                     return None
             except (ConnectionError, TimeoutError) as e:
-                logger.error(f"Database connection failed during JWT user verification: {e}")
+                logger.error(
+                    f"Database connection failed during JWT user verification: {e}"
+                )
                 await self._normalize_timing(start_time)
                 return None
             except Exception as e:

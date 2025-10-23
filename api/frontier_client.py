@@ -23,7 +23,7 @@ class FrontierClient:
             logger.warning(
                 "SIGNAL_INTERNAL_SECRET not set - credit operations will be disabled"
             )
-        
+
         # TODO: if this happens, I need to figure out how to stop the app for a bit
 
     def _is_configured(self) -> bool:

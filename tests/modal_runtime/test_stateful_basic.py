@@ -102,4 +102,3 @@ else:
     print(f"\n⚠️  WARNING: Warm call took {fb2_time:.2f}s (expected <10s)")
 
 print("\n✅ All tests passed!")
-

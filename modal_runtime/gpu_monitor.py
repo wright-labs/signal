@@ -6,6 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def get_gpu_stats() -> List[Dict[str, Any]]:
     """Get basic GPU memory stats."""
     if not torch.cuda.is_available():

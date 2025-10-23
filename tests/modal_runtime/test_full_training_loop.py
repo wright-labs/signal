@@ -6,9 +6,8 @@ import time
 
 def test_full_training_loop():
     """Test complete training workflow."""
-    
+
     print("TESTING FULL TRAINING LOOP")
-    
 
     TrainingSession = modal.Cls.lookup("signal", "TrainingSession")
     session = TrainingSession()
@@ -100,9 +99,8 @@ def test_full_training_loop():
     else:
         print(f"   ⚠️  WARNING: Warm iteration took {warm_time:.2f}s (expected <10s)")
 
-    
     print("✅ FULL TRAINING LOOP TEST PASSED!")
-    
+
     print("\nSummary:")
     print("  - Completed 21 training steps")
     print(f"  - Loss: {losses[0]:.4f} → {fb_result['loss']:.4f}")

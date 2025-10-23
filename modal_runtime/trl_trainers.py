@@ -173,6 +173,7 @@ def create_reward_trainer(
 
     return trainer
 
+
 # TODO, if i'm doing this here, why do I need preference_utils? or if I have it there shouldn't I just use it?
 def prepare_dpo_dataset(
     preference_pairs: List[Dict[str, str]],
@@ -192,6 +193,7 @@ def prepare_dpo_dataset(
 
     return dataset
 
+
 # TODO, if i'm doing this here, why do I need preference_utils? or if I have it there shouldn't I just use it?
 def prepare_reward_dataset(
     preference_pairs: List[Dict[str, str]],
@@ -208,6 +210,7 @@ def prepare_reward_dataset(
     )
 
     return dataset
+
 
 # TODO, if i'm doing this here, why do I need preference_utils? or if I have it there shouldn't I just use it?
 # Helper function for chat template formatting

@@ -34,18 +34,19 @@ class FutureStore:
         with self._lock:
             # Lazy cleanup: remove expired entries when accessing
             self._cleanup_expired_locked()
-            
+
             if future_id not in self._futures:
                 raise KeyError(f"Future {future_id} not found")
 
             entry = self._futures[future_id]
             return entry["future"]
-    
+
     def _cleanup_expired_locked(self):
         """Internal cleanup (must hold lock)."""
         now = datetime.utcnow()
         expired = [
-            fid for fid, entry in self._futures.items()
+            fid
+            for fid, entry in self._futures.items()
             if now - entry["created_at"] > timedelta(seconds=self.ttl_seconds)
         ]
         for fid in expired:
