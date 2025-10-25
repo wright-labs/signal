@@ -136,11 +136,8 @@ class TrainingSession:
 
         # Finish WandB run if active
         if self.wandb_run:
-            try:
-                self.wandb_run.finish()
-                logger.info("✓ WandB run finished")
-            except Exception as e:
-                logger.warning(f"⚠ Failed to finish WandB run: {e}")
+            self.wandb_run.finish()
+            logger.info("✓ WandB run finished")
 
         logger.info("✓ Container shutdown complete")
 
@@ -168,22 +165,7 @@ class TrainingSession:
         auto_checkpoint_interval: int = 100,
         integrations: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Initialize training session.
-
-        This loads the model into GPU memory and keeps it there.
-        All subsequent calls will reuse this loaded model.
-
-        Args:
-            user_id: User identifier
-            run_id: Run identifier
-            base_model: HuggingFace model ID
-            resume_from_step: If provided, resume from this checkpoint
-            accumulation_steps: Gradient accumulation steps
-            ... (other hyperparameters)
-
-        Returns:
-            Dict with session info and model stats
-        """
+        """Initialize training session."""
         try:
             self._update_activity()
             logger.info("INITIALIZING TRAINING SESSION")
@@ -585,7 +567,7 @@ class TrainingSession:
         top_k: Optional[int] = None,
         return_logprobs: bool = False,
     ) -> Dict[str, Any]:
-        """Generate text samples using vLLM for fast batch inference."""
+        """generate text samples"""
         try:
             self._update_activity()
 
@@ -657,7 +639,7 @@ class TrainingSession:
                             logprobs.append(list(token_logprobs.values())[0].logprob)
                     all_logprobs.append(logprobs)
 
-            logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS (vLLM)")
+            logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS")
 
             return {
                 "status": "success",
@@ -989,33 +971,7 @@ class TrainingSession:
         max_prompt_length: int = 1024,
         max_completion_length: int = 2048,
     ) -> Dict[str, Any]:
-        """Train one GRPO step.
-
-        GRPO (Group Relative Policy Optimization) is a policy optimization method
-        that doesn't require a reference model. It uses group-based rewards.
-
-        Args:
-            prompts: List of prompts to generate completions for
-            reward_funcs: List of reward functions that take completions and return scores
-            num_generations: Number of samples per prompt
-            beta: KL penalty coefficient (0.0 = no KL penalty)
-            loss_type: GRPO variant ("grpo", "dapo", "dr_grpo")
-            max_prompt_length: Maximum prompt length
-            max_completion_length: Maximum completion length
-
-        Returns:
-            Training metrics
-
-        Example:
-            >>> def length_reward(completions):
-            ...     return [len(c) * 0.1 for c in completions]
-            >>>
-            >>> result = session.train_grpo_step(
-            ...     prompts=["What is AI?"],
-            ...     reward_funcs=[length_reward],
-            ...     num_generations=8,
-            ... )
-        """
+        """Train one GRPO step."""
         self._update_activity()
 
         if self.model is None:

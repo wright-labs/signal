@@ -1,7 +1,6 @@
 """Signal API - Main application.
 
 Core training API for fine-tuning language models on Modal.
-Billing and API key management are handled by the Frontier Backend.
 """
 
 import sys
@@ -133,7 +132,6 @@ async def lifespan(app: FastAPI):
     import asyncio
     from api.future_store import cleanup_expired_futures
 
-    # TODO: dig into this more. why do we yield at the end again?
     async def cleanup_loop():
         while True:
             await asyncio.sleep(300)  # Every 5 minutes

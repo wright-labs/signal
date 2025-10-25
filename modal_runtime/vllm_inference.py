@@ -1,12 +1,3 @@
-"""vLLM Inference Server for Serverless Model Deployment.
-
-This module provides a standalone vLLM inference endpoint that:
-- Loads base models with LoRA adapters from S3/R2
-- Provides OpenAI-compatible API endpoints
-- Supports high-concurrency serverless autoscaling
-- Handles multiple LoRA adapters on the same base model
-"""
-
 import modal
 import os
 import logging
@@ -40,11 +31,7 @@ class ChatMessage:
     container_idle_timeout=300,  # 5 minutes idle before shutdown
 )
 class VLLMInference:
-    """Serverless vLLM inference endpoint with LoRA support.
-    
-    Provides OpenAI-compatible API for serving fine-tuned models.
-    Supports LoRA adapters on top of base models for memory efficiency.
-    """
+    """Serverless OpenAI-compatible vLLM inference endpoint with LoRA support."""
     
     # Configuration passed at deployment time
     base_model: str = None
