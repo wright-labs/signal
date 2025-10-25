@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware  # TODO: do i need starlette?
+from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -28,19 +28,18 @@ load_dotenv()
 # Add current directory to path for modal_runtime imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-# TODO: wait wtf is noqa: E402 why did I add this again
-from api.auth import AuthManager, get_client_ip  # noqa: E402
-from api.registry import RunRegistry  # noqa: E402
-from api.models import ModelRegistry  # noqa: E402
-from api.logging_config import security_logger  # noqa: E402
+from api.auth import AuthManager, get_client_ip
+from api.registry import RunRegistry
+from api.models import ModelRegistry
+from api.logging_config import security_logger
 
 # from api.openai_compat import router as openai_router TODO: i should prob ship w verifiers integrations
-from api.frontier_client import get_frontier_client  # noqa: E402
-from api.pricing import get_gpu_hourly_rate, calculate_run_cost  # noqa: E402
-from api.future_store import store_future, get_future, delete_future  # noqa: E402
+from api.frontier_client import get_frontier_client
+from api.pricing import get_gpu_hourly_rate, calculate_run_cost
+from api.future_store import store_future, get_future, delete_future
 
 logger = logging.getLogger(__name__)
-from api.schemas import (  # noqa: E402
+from api.schemas import (
     RunConfig,
     RunResponse,
     ForwardBackwardRequest,
