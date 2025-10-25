@@ -569,3 +569,86 @@ class QueueStatsResponse(BaseModel):
     running: int = Field(..., description="Running requests")
     completed: int = Field(..., description="Completed requests")
     failed: int = Field(..., description="Failed requests")
+
+
+class DeployInferenceRequest(BaseModel):
+    """Request to deploy a trained model to serverless inference."""
+
+    gpu_config: str = Field(
+        "A10G",
+        description="GPU configuration for inference (e.g., 'A10G', 'A100', 'L40S')",
+    )
+    artifact_uri: Optional[str] = Field(
+        None,
+        description="Specific checkpoint S3 URI to deploy (if None, uses latest)",
+    )
+    max_model_len: int = Field(
+        2048,
+        ge=512,
+        le=32768,
+        description="Maximum sequence length for inference (512-32768)",
+    )
+    tensor_parallel_size: int = Field(
+        1,
+        ge=1,
+        le=8,
+        description="Number of GPUs for tensor parallelism (1-8)",
+    )
+    max_concurrent_requests: int = Field(
+        100,
+        ge=1,
+        le=1000,
+        description="Maximum concurrent requests (1-1000)",
+    )
+
+    @field_validator("gpu_config")
+    @classmethod
+    def validate_gpu_config(cls, v: str) -> str:
+        """Validate GPU configuration format."""
+        valid_gpus = ["A10G", "A100", "A100-80GB", "L40S", "H100"]
+        if v not in valid_gpus:
+            raise ValueError(
+                f"Invalid GPU config. Must be one of: {', '.join(valid_gpus)}"
+            )
+        return v
+
+
+class DeployInferenceResponse(BaseModel):
+    """Response from deploying an inference endpoint."""
+
+    deployment_id: str = Field(..., description="Unique deployment identifier")
+    inference_url: str = Field(..., description="Base URL for inference requests")
+    openai_base_url: str = Field(
+        ..., description="OpenAI-compatible base URL for SDK integration"
+    )
+    model_id: str = Field(
+        ..., description="Model identifier to use in OpenAI client requests"
+    )
+    status: str = Field(..., description="Deployment status")
+    base_model: str = Field(..., description="Base model used")
+    lora_enabled: bool = Field(..., description="Whether LoRA adapter is loaded")
+    gpu_config: str = Field(..., description="GPU configuration")
+    endpoints: Dict[str, str] = Field(
+        ..., description="Available API endpoints (chat, completions, health)"
+    )
+    created_at: str = Field(..., description="Deployment timestamp")
+
+
+class DeploymentStatusResponse(BaseModel):
+    """Response for checking deployment status."""
+
+    deployment_id: str = Field(..., description="Deployment identifier")
+    status: str = Field(
+        ..., description="Status: 'deploying', 'active', 'failed', 'stopped'"
+    )
+    inference_url: Optional[str] = Field(None, description="Inference URL if active")
+    error: Optional[str] = Field(None, description="Error message if failed")
+    uptime_seconds: Optional[int] = Field(None, description="Uptime in seconds")
+    request_count: Optional[int] = Field(None, description="Total requests served")
+
+
+class ListDeploymentsResponse(BaseModel):
+    """Response for listing user's deployments."""
+
+    deployments: List[Dict[str, Any]] = Field(..., description="List of deployments")
+    total: int = Field(..., description="Total number of deployments")

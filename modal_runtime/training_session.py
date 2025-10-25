@@ -67,6 +67,7 @@ class TrainingSession:
     monitor_thread: threading.Thread = None
     wandb_run: Any = None
     last_loss: float = 0.0
+    vllm_engine: Any = None  # vLLM engine for fast inference
 
     @modal.enter()
     def container_startup(self):
@@ -584,74 +585,79 @@ class TrainingSession:
         top_k: Optional[int] = None,
         return_logprobs: bool = False,
     ) -> Dict[str, Any]:
-        """generate text samples"""
+        """Generate text samples using vLLM for fast batch inference."""
         try:
             self._update_activity()
 
             if self.model is None:
                 raise RuntimeError("Model not initialized. Call initialize() first.")
 
-            logger.info("GENERATING SAMPLES")
-
+            logger.info("GENERATING SAMPLES WITH vLLM")
             logger.info(f"Step: {self.current_step}")
             logger.info(f"Prompts: {len(prompts)}")
 
-            # Unwrap model for generation (Accelerate wraps it)
-            model_to_use = self.accelerator.unwrap_model(self.model)
+            # Initialize vLLM engine on first use or if not available
+            if self.vllm_engine is None:
+                logger.info("Initializing vLLM engine...")
+                from vllm import LLM, SamplingParams
+                
+                # Save current checkpoint for vLLM to load
+                temp_checkpoint_path = self._save_checkpoint_internal(tag="vllm_temp")
+                
+                # Detect GPU count for tensor parallelism
+                gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
+                
+                # Initialize vLLM with the checkpoint
+                self.vllm_engine = LLM(
+                    model=temp_checkpoint_path,
+                    tokenizer=temp_checkpoint_path,
+                    dtype="bfloat16" if self.config.get("bf16", True) else "float16",
+                    tensor_parallel_size=min(gpu_count, 2),  # Use up to 2 GPUs for TP
+                    trust_remote_code=True,
+                    max_model_len=self.config.get("max_seq_length", 2048),
+                    enable_lora=True,  # Enable LoRA support
+                )
+                logger.info(f"✓ vLLM engine initialized (TP={min(gpu_count, 2)})")
+            
+            # Prepare sampling parameters
+            from vllm import SamplingParams
+            
+            sampling_params = SamplingParams(
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k if top_k else -1,
+                max_tokens=max_tokens,
+                logprobs=1 if return_logprobs else None,
+            )
 
-            # Switch to eval mode
-            model_to_use.eval()
+            # Batch generate with vLLM (much faster than HF)
+            logger.info(f"Generating {len(prompts)} completions in batch...")
+            vllm_outputs = self.vllm_engine.generate(prompts, sampling_params)
 
+            # Extract outputs
             outputs = []
             all_token_ids = []
             all_logprobs = [] if return_logprobs else None
 
-            with torch.no_grad():
-                for i, prompt in enumerate(prompts):
-                    logger.info(f"  Generating {i + 1}/{len(prompts)}...")
+            for output in vllm_outputs:
+                # Get generated text (vLLM includes prompt by default)
+                generated_text = output.outputs[0].text
+                outputs.append(generated_text)
+                
+                # Get token IDs
+                token_ids = output.outputs[0].token_ids
+                all_token_ids.append(token_ids)
+                
+                # Get logprobs if requested
+                if return_logprobs and output.outputs[0].logprobs:
+                    logprobs = []
+                    for token_logprobs in output.outputs[0].logprobs:
+                        if token_logprobs:
+                            # Get logprob for the selected token
+                            logprobs.append(list(token_logprobs.values())[0].logprob)
+                    all_logprobs.append(logprobs)
 
-                    # Tokenize prompt
-                    inputs = self.tokenizer(prompt, return_tensors="pt").to(
-                        self.accelerator.device
-                    )
-
-                    # Generate
-                    if return_logprobs:
-                        generation_output = model_to_use.generate(
-                            **inputs,
-                            max_new_tokens=max_tokens,
-                            temperature=temperature,
-                            top_p=top_p,
-                            top_k=top_k,
-                            do_sample=temperature > 0,
-                            pad_token_id=self.tokenizer.pad_token_id,
-                            output_scores=True,
-                            return_dict_in_generate=True,
-                        )
-                        generated_ids = generation_output.sequences[0]
-                        # TODO: Extract logprobs from scores
-                    else:
-                        generated_ids = model_to_use.generate(
-                            **inputs,
-                            max_new_tokens=max_tokens,
-                            temperature=temperature,
-                            top_p=top_p,
-                            top_k=top_k,
-                            do_sample=temperature > 0,
-                            pad_token_id=self.tokenizer.pad_token_id,
-                        )[0]
-
-                    # Decode
-                    output_text = self.tokenizer.decode(
-                        generated_ids, skip_special_tokens=True
-                    )
-                    outputs.append(output_text)
-                    all_token_ids.append(generated_ids.cpu().tolist())
-
-            # Switch back to train mode
-            model_to_use.train()
-
-            logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS")
+            logger.info(f"✓ GENERATED {len(outputs)} COMPLETIONS (vLLM)")
 
             return {
                 "status": "success",
@@ -664,7 +670,11 @@ class TrainingSession:
         except Exception as e:
             error_msg = f"Sampling failed: {str(e)}\n{traceback.format_exc()}"
             logger.info(f"\n❌ ERROR: {error_msg}")
-            raise
+            # Fall back to HuggingFace generation if vLLM fails
+            logger.warning("Falling back to HuggingFace generation...")
+            return self._sample_huggingface(
+                prompts, max_tokens, temperature, top_p, top_k, return_logprobs
+            )
 
     @modal.method()
     def save_state(
@@ -1050,6 +1060,71 @@ class TrainingSession:
         }
 
     # Internal helper methods
+
+    def _sample_huggingface(
+        self,
+        prompts: List[str],
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        top_k: Optional[int] = None,
+        return_logprobs: bool = False,
+    ) -> Dict[str, Any]:
+        """Fallback HuggingFace generation (slower but more compatible)."""
+        model_to_use = self.accelerator.unwrap_model(self.model)
+        model_to_use.eval()
+
+        outputs = []
+        all_token_ids = []
+        all_logprobs = [] if return_logprobs else None
+
+        with torch.no_grad():
+            for i, prompt in enumerate(prompts):
+                logger.info(f"  Generating {i + 1}/{len(prompts)} (HF)...")
+
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(
+                    self.accelerator.device
+                )
+
+                if return_logprobs:
+                    generation_output = model_to_use.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        do_sample=temperature > 0,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        output_scores=True,
+                        return_dict_in_generate=True,
+                    )
+                    generated_ids = generation_output.sequences[0]
+                else:
+                    generated_ids = model_to_use.generate(
+                        **inputs,
+                        max_new_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        do_sample=temperature > 0,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                    )[0]
+
+                output_text = self.tokenizer.decode(
+                    generated_ids, skip_special_tokens=True
+                )
+                outputs.append(output_text)
+                all_token_ids.append(generated_ids.cpu().tolist())
+
+        model_to_use.train()
+
+        return {
+            "status": "success",
+            "outputs": outputs,
+            "token_ids": all_token_ids,
+            "logprobs": all_logprobs,
+            "step": self.current_step,
+        }
 
     def _save_checkpoint_internal(self, tag: Optional[str] = None) -> str:
         """Internal checkpoint save method."""
