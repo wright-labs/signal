@@ -131,6 +131,28 @@ class FrontierClient:
             logger.error(f"Failed to fetch integrations: {e}")
             return {}
 
+    async def validate_api_key(self, api_key: str) -> Optional[str]:
+        """Validate API key and return user_id."""
+        self._raise_if_not_configured()
+        
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(
+                    f"{self.backend_url}/internal/validate-api-key",
+                    json={"api_key": api_key},
+                    headers={"X-Internal-Secret": self.internal_secret},
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("user_id")
+                else:
+                    logger.error(f"API key validation failed: {response.status_code}")
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to validate API key: {e}")
+            return None
+
 
 # Global instance
 _frontier_client = None
