@@ -65,26 +65,3 @@ def print_gpu_stats():
         logger.info(f"  Utilization: {stat['utilization_percent']:.1f}%")
 
     logger.info(f"{'=' * 60}\n")
-
-
-# TODO: check this, not sure if this is the correct way to do it
-# TODO: if i'm using accelerate, do I still need to do this?
-# TODO: pretty sure it's completely unused
-def setup_multi_gpu_model(model: Any, strategy: str = "data_parallel") -> Any:
-    """Wrap model for multi-GPU using DataParallel."""
-    if not torch.cuda.is_available():
-        return model
-
-    num_gpus = torch.cuda.device_count()
-
-    if num_gpus <= 1:
-        return model
-
-    if strategy == "data_parallel":
-        logger.info(f"Wrapping model with DataParallel ({num_gpus} GPUs)")
-        return torch.nn.DataParallel(model)
-    else:
-        raise ValueError(
-            f"Unknown multi-GPU strategy: {strategy}. "
-            f"Only 'data_parallel' is supported."
-        )

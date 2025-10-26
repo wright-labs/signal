@@ -13,7 +13,7 @@ class GPUConfigError(ValueError):
     pass
 
 
-VALID_GPU_TYPES = ["L40S", "A100", "A100-80GB", "H100", "T4", "A10G"]
+VALID_GPU_TYPES = ["L40S", "A100", "A100-80GB", "H100", "B200", "T4", "A10G"]
 
 
 def validate_gpu_config(gpu_config: str, raise_http_exception: bool = False) -> bool:
@@ -116,8 +116,10 @@ GPU_ALLOCATION_RULES = [
     (7.0, "L40S:1"),  # 1-7B params
     (13.0, "A100-80GB:1"),  # 7-13B params
     (30.0, "A100-80GB:2"),  # 13-30B params
-    (70.0, "A100-80GB:4"),  # 30-70B params
-    (float("inf"), "A100-80GB:8"),  # > 70B params
+    (70.0, "H100:2"),  # 30-70B params (H100 more efficient than A100)
+    (175.0, "H100:4"),  # 70-175B params
+    (400.0, "H100:8"),  # 175-400B params
+    (float("inf"), "B200:8"),  # > 400B params
 ]
 
 
@@ -143,7 +145,7 @@ def allocate_gpu_config(
             logger.info(f"Allocated {gpu_config} for {model_name} ({params}B params)")
             return gpu_config
 
-    return "A100-80GB:8"  # Fallback for very large models TODO: make this 8 H100s
+    return "H100:8"  # Fallback for very large models
 
 
 def get_supported_models() -> Dict[str, ModelInfo]:

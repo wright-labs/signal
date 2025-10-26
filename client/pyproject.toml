@@ -54,7 +54,7 @@ Issues = "https://github.com/wright-labs/signal/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["frontier_signal*"]
+include = ["rewardsignal*"]
 exclude = ["tests*", "examples*"]
 
 [tool.black]

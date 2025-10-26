@@ -295,9 +295,6 @@ async def check_and_charge_incremental(
     """Check balance every 2 minutes and charge if needed based on time elapsed. Raises 402 if insufficient."""
     from datetime import datetime, timezone
 
-    # TODO: if they run out of credits, I need to save state and stop the run wherever it is.
-    # TODO: also, should clear storage in 2 weeks if there are still 0 credits in it OR just set max storage cap pretty high.
-
     run = run_registry.get_run(run_id)
     if not run or not run.get("started_at"):
         return
@@ -346,7 +343,36 @@ async def check_and_charge_incremental(
             user_id, amount_to_charge, run_id, run["current_step"]
         )
         if not success:
-            raise HTTPException(402, "Insufficient credits to continue")
+            # Gracefully save checkpoint before pausing
+            try:
+                logger.warning(f"Insufficient credits for run {run_id}, saving checkpoint and pausing...")
+                session = get_training_session(run_id, gpu_config=gpu_config)
+                save_result = session.save_state.remote(mode="adapter")
+                
+                # Record the checkpoint
+                if save_result.get("s3_uri"):
+                    run_registry.record_artifact(
+                        run_id=run_id,
+                        step=run["current_step"],
+                        mode="adapter",
+                        s3_uri=save_result["s3_uri"],
+                        manifest=save_result.get("manifest", {}),
+                        file_size_bytes=save_result.get("manifest", {}).get("total_size_bytes"),
+                    )
+                
+                # Mark run as paused
+                run_registry.update_run(run_id, status="paused")
+                logger.info(f"Run {run_id} paused and checkpoint saved to {save_result.get('s3_uri')}")
+                
+            except Exception as save_error:
+                logger.error(f"Failed to save checkpoint before pausing run {run_id}: {save_error}")
+                # Still pause the run even if save fails
+                run_registry.update_run(run_id, status="paused")
+            
+            raise HTTPException(
+                402, 
+                "Insufficient credits. Run has been paused and checkpoint saved. Add credits to resume."
+            )
 
         # Update tracking
         run_registry.update_charged_amount(run_id, cost_so_far)
@@ -369,8 +395,32 @@ async def check_and_charge_incremental(
     balance = await frontier_client.get_balance(user_id)
     min_balance = float(os.getenv("MIN_BALANCE_THRESHOLD", "0.50"))
     if balance < min_balance:
+        # Gracefully save and pause before raising error
+        try:
+            logger.warning(f"Low balance for run {run_id}, saving checkpoint and pausing...")
+            session = get_training_session(run_id, gpu_config=gpu_config)
+            save_result = session.save_state.remote(mode="adapter")
+            
+            if save_result.get("s3_uri"):
+                run_registry.record_artifact(
+                    run_id=run_id,
+                    step=run["current_step"],
+                    mode="adapter",
+                    s3_uri=save_result["s3_uri"],
+                    manifest=save_result.get("manifest", {}),
+                    file_size_bytes=save_result.get("manifest", {}).get("total_size_bytes"),
+                )
+            
+            run_registry.update_run(run_id, status="paused")
+            logger.info(f"Run {run_id} paused due to low balance, checkpoint saved")
+            
+        except Exception as save_error:
+            logger.error(f"Failed to save checkpoint for low balance run {run_id}: {save_error}")
+            run_registry.update_run(run_id, status="paused")
+        
         raise HTTPException(
-            402, f"Credits depleted. Balance: ${balance:.2f}. Add funds to continue."
+            402, 
+            f"Credits depleted. Balance: ${balance:.2f}. Run paused and checkpoint saved. Add credits to resume."
         )
 
 

@@ -2,6 +2,9 @@
 
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RunConfig(BaseModel):
@@ -30,11 +33,20 @@ class RunConfig(BaseModel):
     weight_decay: float = Field(
         0.01, ge=0.0, le=1.0, description="Weight decay (0.0-1.0)"
     )
+    lr_scheduler: Optional[str] = Field(
+        None,
+        description="Learning rate scheduler: 'cosine', 'linear', 'constant_with_warmup', or None for no scheduler"
+    )
+    warmup_steps: int = Field(
+        0,
+        ge=0,
+        description="Number of warmup steps for learning rate scheduler"
+    )
     max_seq_length: int = Field(
         2048,
         ge=128,
-        le=8192,
-        description="Maximum sequence length (128-8192)",  # TODO: maybe set a much higher max length?
+        le=131072,
+        description="Maximum sequence length (128-131072). Will be validated against model's context length."
     )
     bf16: bool = Field(True, description="Use bfloat16 precision")
     gradient_checkpointing: bool = Field(
@@ -68,6 +80,41 @@ class RunConfig(BaseModel):
         parts = v.split("/")
         if len(parts) < 2 or not all(parts):
             raise ValueError("Invalid model name format")
+        return v
+    
+    @field_validator("max_seq_length")
+    @classmethod
+    def validate_max_seq_length(cls, v: int, info) -> int:
+        """Validate max_seq_length against model's context length."""
+        # Get base_model if available in validation context
+        if hasattr(info, 'data') and 'base_model' in info.data:
+            base_model = info.data['base_model']
+            try:
+                from api.gpu_allocator import get_model_info
+                model_info = get_model_info(base_model)
+                
+                if model_info and model_info.context_length:
+                    if v > model_info.context_length:
+                        logger.warning(
+                            f"max_seq_length ({v}) exceeds model's context length "
+                            f"({model_info.context_length}). Using model's maximum."
+                        )
+                        return model_info.context_length
+            except Exception as e:
+                logger.warning(f"Could not validate max_seq_length against model info: {e}")
+        
+        return v
+    
+    @field_validator("lr_scheduler")
+    @classmethod
+    def validate_lr_scheduler(cls, v: Optional[str]) -> Optional[str]:
+        """Validate learning rate scheduler type."""
+        if v is not None:
+            valid_schedulers = ["cosine", "linear", "constant_with_warmup"]
+            if v not in valid_schedulers:
+                raise ValueError(
+                    f"Invalid lr_scheduler. Must be one of: {', '.join(valid_schedulers)}"
+                )
         return v
 
 
@@ -175,21 +222,12 @@ class TrainingExample(BaseModel):
         if format_count > 1:
             raise ValueError("Provide only ONE format: SFT, DPO, GRPO, or PPO")
 
-        # TODO: wait why don't we just delete this section
         # Validate format-specific requirements
-        if has_dpo:
-            # Check if any DPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
-
         if has_grpo:
             if len(self.responses) != len(self.rewards):
                 raise ValueError(
                     "Number of responses must match number of rewards for GRPO"
                 )
-        # TODO: wait why don't we just delete this section
-        if has_ppo:
-            # Check if PPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
 
         return self
 

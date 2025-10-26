@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 def get_supabase() -> Client:
     """Get or create Supabase client instance."""
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     if not supabase_url or not supabase_key:
         raise ValueError(
-            f"SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables. "
+            f"SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables. "
             f"URL: {supabase_url}, Key: {supabase_key[:20] if supabase_key else 'None'}..."
         )
 

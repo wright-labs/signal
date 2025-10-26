@@ -16,25 +16,30 @@ class FrontierClient:
         self.internal_secret = os.getenv("SIGNAL_INTERNAL_SECRET")
 
         if not self.backend_url:
-            logger.warning(
-                "FRONTIER_BACKEND_URL not set - credit operations will be disabled"
+            logger.error(
+                "FRONTIER_BACKEND_URL not set - billing service unavailable"
             )
         if not self.internal_secret:
-            logger.warning(
-                "SIGNAL_INTERNAL_SECRET not set - credit operations will be disabled"
+            logger.error(
+                "SIGNAL_INTERNAL_SECRET not set - billing service unavailable"
             )
-
-        # TODO: if this happens, I need to figure out how to stop the app for a bit
 
     def _is_configured(self) -> bool:
         """Check if client is properly configured."""
         return bool(self.backend_url and self.internal_secret)
+    
+    def _raise_if_not_configured(self) -> None:
+        """Raise 503 if client is not configured (fail-closed to prevent unpaid usage)."""
+        if not self._is_configured():
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=503,
+                detail="Billing service unavailable. Please contact support."
+            )
 
     async def get_balance(self, user_id: str) -> float:
         """Get user's current credit balance."""
-        if not self._is_configured():
-            logger.warning("Frontier client not configured - returning zero balance")
-            return 0
+        self._raise_if_not_configured()
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -59,37 +64,12 @@ class FrontierClient:
         self, user_id: str, amount: float, run_id: str, step: Optional[int] = None
     ) -> bool:
         """Charge credits immediately for incremental billing with idempotency."""
-        if not self._is_configured():
-            logger.warning("Frontier client not configured - skipping charge")
-            return True
+        self._raise_if_not_configured()
 
         # Generate idempotency key (deterministic based on run_id, step, and amount)
         # Use cents to avoid floating point issues
         amount_cents = int(amount * 10000)
         idempotency_key = f"{run_id}-step{step or 0}-{amount_cents}"
-
-        # Check if already charged (deduplication)
-        from api.supabase_client import get_supabase
-
-        supabase = get_supabase()
-
-        # TODO: may want to move this to the backend?
-
-        try:
-            existing = (
-                supabase.table("billing_charges")
-                .select("*")
-                .eq("idempotency_key", idempotency_key)
-                .execute()
-            )
-
-            if existing.data:
-                logger.info(
-                    f"Charge deduplicated for {idempotency_key} - already processed"
-                )
-                return True  # Already charged, return success
-        except Exception as e:
-            logger.warning(f"Failed to check idempotency: {e} - proceeding with charge")
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -100,6 +80,7 @@ class FrontierClient:
                         "amount": amount,
                         "run_id": run_id,
                         "step": step,
+                        "idempotency_key": idempotency_key,
                         "description": f"Training run {run_id}"
                         + (f" step {step}" if step else ""),
                     },
@@ -107,27 +88,14 @@ class FrontierClient:
                 )
 
                 if response.status_code == 200:
-                    # Record successful charge in database
-                    try:
-                        supabase.table("billing_charges").insert(
-                            {
-                                "idempotency_key": idempotency_key,
-                                "run_id": run_id,
-                                "user_id": user_id,
-                                "amount": amount,
-                                "step": step,
-                            }
-                        ).execute()
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to record charge: {e} - charge succeeded but not recorded"
+                    data = response.json()
+                    if data.get("already_charged"):
+                        logger.info(
+                            f"Charge deduplicated for {idempotency_key} - already processed"
                         )
-
-                    logger.info(f"Charged ${amount:.4f} for run {run_id}")
-                    return True
-                elif response.status_code == 402:
-                    logger.warning(f"Insufficient credits for run {run_id}")
-                    return False
+                    else:
+                        logger.info(f"Charged ${amount:.4f} for run {run_id}")
+                    return data.get("success", True)
                 else:
                     logger.error(
                         f"Charge failed: {response.status_code} - {response.text}"
@@ -140,11 +108,7 @@ class FrontierClient:
 
     async def get_integrations(self, user_id: str) -> Dict[str, str]:
         """Get user's integration credentials."""
-        if not self._is_configured():
-            logger.warning(
-                "Frontier client not configured - returning empty integrations"
-            )
-            return {}
+        self._raise_if_not_configured()
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
