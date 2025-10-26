@@ -249,10 +249,10 @@ def cleanup_stale_runs(
 
     # Get Supabase credentials from environment
     supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_KEY")
+    supabase_key = os.environ.get("SUPABASE_ANON_KEY")
 
     if not supabase_url or not supabase_key:
-        logger.info("❌ Missing SUPABASE_URL or SUPABASE_KEY")
+        logger.info("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
         return {"status": "error", "message": "Missing Supabase credentials"}
 
     try:
