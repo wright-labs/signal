@@ -57,9 +57,8 @@ EVAL_PROMPTS = [
 
 async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str):
     """Test a specific model with a specific GPU configuration."""
-    print("\n" + "=" * 80)
+
     print(f"TEST: {model_config['name']} on {gpu_config}")
-    print("=" * 80)
 
     client = SignalClient(
         api_key=api_key, base_url=os.getenv("API_URL", "http://localhost:8000")
@@ -188,9 +187,8 @@ async def test_model_gpu_combo(model_config: dict, gpu_config: str, api_key: str
 
 async def main():
     """Run comprehensive multi-GPU tests."""
-    print("=" * 80)
+
     print("MULTI-GPU TRAINING TEST")
-    print("=" * 80)
 
     # Get API key
     api_key = os.getenv("API_KEY")
@@ -215,9 +213,8 @@ async def main():
             await asyncio.sleep(2)
 
     # Summary
-    print("\n" + "=" * 80)
+
     print("SUMMARY")
-    print("=" * 80)
 
     if not results:
         print("❌ No successful tests")
@@ -251,9 +248,7 @@ async def main():
             )
 
     # Cost analysis
-    print("\n" + "-" * 80)
     print("Cost Analysis (estimated for 1000 steps):")
-    print("-" * 80)
 
     GPU_COSTS = {
         "l40s:1": 1.60,
@@ -268,9 +263,7 @@ async def main():
             cost = time_hours * GPU_COSTS.get(r["gpu_config"], 0)
             print(f"  {r['gpu_config']:10s}: {time_hours:.2f}h = ${cost:.2f}")
 
-    print("\n" + "=" * 80)
     print("✅ Multi-GPU testing complete!")
-    print("=" * 80)
 
 
 if __name__ == "__main__":

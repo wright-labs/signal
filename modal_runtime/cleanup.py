@@ -6,10 +6,14 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Any
 import modal
+import logging
+
+logger = logging.getLogger(__name__)
 
 from modal_runtime.app import app, data_volume, VOLUME_CONFIG, api_secret
 
 
+# TODO: do i seriously need this
 def safe_api_call(
     url: str, json_data: dict, headers: dict, operation_name: str
 ) -> bool:
@@ -19,13 +23,13 @@ def safe_api_call(
 
         response = requests.post(url, json=json_data, headers=headers, timeout=10)
         if response.status_code == 200:
-            print(f"  ✓ {operation_name}")
+            logger.info(f"  ✓ {operation_name}")
             return True
         else:
-            print(f"  ⚠ {operation_name} failed: {response.status_code}")
+            logger.info(f"  ⚠ {operation_name} failed: {response.status_code}")
             return False
     except Exception as e:
-        print(f"  ⚠ {operation_name} error: {e}")
+        logger.info(f"  ⚠ {operation_name} error: {e}")
         return False
 
 
@@ -66,7 +70,7 @@ def get_all_run_directories(base_path: str = "/data/runs") -> List[Dict[str, Any
                     }
                 )
             except Exception as e:
-                print(f"Warning: Could not read {run_dir}: {e}")
+                logger.info(f"Warning: Could not read {run_dir}: {e}")
                 continue
 
     return runs
@@ -104,37 +108,36 @@ def cleanup_old_runs(
 
     Runs daily to clean up completed training runs older than retention_days.
     Artifacts remain in S3 for long-term storage."""
-    print("=" * 80)
-    print("Starting Modal Volume cleanup job")
-    print(f"Retention policy: {retention_days} days")
-    print(f"Dry run: {dry_run}")
-    print("=" * 80)
+
+    logger.info("Starting Modal Volume cleanup job")
+    logger.info(f"Retention policy: {retention_days} days")
+    logger.info(f"Dry run: {dry_run}")
 
     # Get API URL from environment if not provided
     if api_url is None:
         api_url = os.environ.get("SIGNAL_API_URL")
 
     if api_url:
-        print(f"API URL configured: {api_url}")
+        logger.info(f"API URL configured: {api_url}")
     else:
-        print("No API URL configured - database will not be updated")
+        logger.info("No API URL configured - database will not be updated")
 
     # Calculate cutoff date
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
-    print(f"Cutoff date: {cutoff_date.isoformat()}")
+    logger.info(f"Cutoff date: {cutoff_date.isoformat()}")
 
     # Scan for all runs
-    print("\nScanning Modal Volume for runs...")
+    logger.info("\nScanning Modal Volume for runs...")
     all_runs = get_all_run_directories()
-    print(f"Found {len(all_runs)} total runs")
+    logger.info(f"Found {len(all_runs)} total runs")
 
     # Filter runs older than cutoff
     old_runs = [run for run in all_runs if run["last_modified"] < cutoff_date]
 
-    print(f"Found {len(old_runs)} runs older than {retention_days} days")
+    logger.info(f"Found {len(old_runs)} runs older than {retention_days} days")
 
     if not old_runs:
-        print("No runs to clean up")
+        logger.info("No runs to clean up")
         return {
             "status": "success",
             "scanned": len(all_runs),
@@ -153,11 +156,11 @@ def cleanup_old_runs(
         run_path = run["path"]
         age_days = (datetime.now(timezone.utc) - run["last_modified"]).days
 
-        print(f"\n{'[DRY RUN] ' if dry_run else ''}Cleaning up run:")
-        print(f"  User: {user_id}")
-        print(f"  Run: {run_id}")
-        print(f"  Age: {age_days} days")
-        print(f"  Path: {run_path}")
+        logger.info(f"\n{'[DRY RUN] ' if dry_run else ''}Cleaning up run:")
+        logger.info(f"  User: {user_id}")
+        logger.info(f"  Run: {run_id}")
+        logger.info(f"  Age: {age_days} days")
+        logger.info(f"  Path: {run_path}")
 
         if dry_run:
             # Just log, don't delete
@@ -170,7 +173,7 @@ def cleanup_old_runs(
             total_bytes_freed += bytes_freed
             deleted_count += 1
 
-            print(f"  ✓ Deleted ({bytes_freed / (1024**3):.2f} GB freed)")
+            logger.info(f"  ✓ Deleted ({bytes_freed / (1024**3):.2f} GB freed)")
 
             # Update database if API URL is provided
             if api_url:
@@ -193,28 +196,26 @@ def cleanup_old_runs(
 
         except Exception as e:
             error_msg = f"Failed to delete {run_path}: {e}"
-            print(f"  ❌ {error_msg}")
+            logger.info(f"  ❌ {error_msg}")
             errors.append(error_msg)
 
     # Commit volume changes
     if not dry_run and deleted_count > 0:
-        print("\nCommitting volume changes...")
+        logger.info("\nCommitting volume changes...")
         data_volume.commit()
-        print("✓ Volume committed")
+        logger.info("✓ Volume committed")
 
     # Summary
-    print("\n" + "=" * 80)
-    print("Cleanup Summary")
-    print("=" * 80)
-    print(f"Scanned: {len(all_runs)} runs")
-    print(f"Deleted: {deleted_count} runs")
-    print(f"Space freed: {total_bytes_freed / (1024**3):.2f} GB")
-    print(f"Errors: {len(errors)}")
+    logger.info("Cleanup Summary")
+    logger.info(f"Scanned: {len(all_runs)} runs")
+    logger.info(f"Deleted: {deleted_count} runs")
+    logger.info(f"Space freed: {total_bytes_freed / (1024**3):.2f} GB")
+    logger.info(f"Errors: {len(errors)}")
 
     if errors:
-        print("\nErrors:")
+        logger.info("\nErrors:")
         for error in errors:
-            print(f"  - {error}")
+            logger.info(f"  - {error}")
 
     return {
         "status": "success" if not errors else "partial",
@@ -242,18 +243,16 @@ def cleanup_stale_runs(
     Uses the database's updated_at column which auto-updates on any API activity."""
     from supabase import create_client
 
-    print("=" * 80)
-    print("Starting stale run cleanup job")
-    print(f"Stale threshold: {stale_minutes} minutes")
-    print(f"Dry run: {dry_run}")
-    print("=" * 80)
+    logger.info("Starting stale run cleanup job")
+    logger.info(f"Stale threshold: {stale_minutes} minutes")
+    logger.info(f"Dry run: {dry_run}")
 
     # Get Supabase credentials from environment
     supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_KEY")
+    supabase_key = os.environ.get("SUPABASE_ANON_KEY")
 
     if not supabase_url or not supabase_key:
-        print("❌ Missing SUPABASE_URL or SUPABASE_KEY")
+        logger.info("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
         return {"status": "error", "message": "Missing Supabase credentials"}
 
     try:
@@ -273,13 +272,15 @@ def cleanup_stale_runs(
             )
 
             stale_runs = result.data or []
-            print(f"\n[DRY RUN] Would mark {len(stale_runs)} runs as failed:")
+            logger.info(f"\n[DRY RUN] Would mark {len(stale_runs)} runs as failed:")
             for run in stale_runs:
                 updated_at = datetime.fromisoformat(run["updated_at"])
                 minutes_stale = (
                     datetime.now(timezone.utc) - updated_at
                 ).total_seconds() / 60
-                print(f"  - {run['id']} (inactive for {minutes_stale:.1f} minutes)")
+                logger.info(
+                    f"  - {run['id']} (inactive for {minutes_stale:.1f} minutes)"
+                )
 
             return {
                 "status": "success",
@@ -294,7 +295,7 @@ def cleanup_stale_runs(
             ).execute()
 
             marked_runs = result.data or []
-            print(f"\n✓ Marked {len(marked_runs)} runs as failed:")
+            logger.info(f"\n✓ Marked {len(marked_runs)} runs as failed:")
 
             # Now charge remaining costs for each failed run
             api_url = os.environ.get("SIGNAL_API_URL")
@@ -308,7 +309,7 @@ def cleanup_stale_runs(
                 user_id = run["user_id"]
                 minutes_stale = run["minutes_stale"]
 
-                print(f"  - {run_id} (inactive for {minutes_stale:.1f} minutes)")
+                logger.info(f"  - {run_id} (inactive for {minutes_stale:.1f} minutes)")
 
                 # Try to charge remaining cost via API
                 if api_url and internal_key:
@@ -326,12 +327,12 @@ def cleanup_stale_runs(
                     else:
                         charge_errors.append(run_id)
 
-            print("\n" + "=" * 80)
-            print(f"Marked {len(marked_runs)} runs as failed")
-            print(f"Charged {charged_count} runs successfully")
+            logger.info(f"Marked {len(marked_runs)} runs as failed")
+            logger.info(f"Charged {charged_count} runs successfully")
             if charge_errors:
-                print(f"Failed to charge {len(charge_errors)} runs: {charge_errors}")
-            print("=" * 80)
+                logger.info(
+                    f"Failed to charge {len(charge_errors)} runs: {charge_errors}"
+                )
 
             return {
                 "status": "success",
@@ -343,10 +344,10 @@ def cleanup_stale_runs(
             }
 
     except Exception as e:
-        print(f"❌ Cleanup failed: {e}")
+        logger.info(f"❌ Cleanup failed: {e}")
         import traceback
 
-        traceback.print_exc()
+        traceback.logger.info_exc()
         return {"status": "error", "message": str(e)}
 
 
@@ -365,13 +366,12 @@ def run_cleanup_now(
         dry_run=dry_run,
     )
 
-    print("\n" + "=" * 80)
-    print("Cleanup Result:")
-    print("=" * 80)
-    print(f"Status: {result['status']}")
-    print(f"Scanned: {result['scanned']}")
-    print(f"Deleted: {result['deleted']}")
-    print(f"Bytes freed: {result['bytes_freed'] / (1024**3):.2f} GB")
+    logger.info("Cleanup Result:")
+
+    logger.info(f"Status: {result['status']}")
+    logger.info(f"Scanned: {result['scanned']}")
+    logger.info(f"Deleted: {result['deleted']}")
+    logger.info(f"Bytes freed: {result['bytes_freed'] / (1024**3):.2f} GB")
 
     if result.get("errors"):
-        print(f"Errors: {len(result['errors'])}")
+        logger.info(f"Errors: {len(result['errors'])}")

@@ -1,3 +1,4 @@
+# TODO: i need to study this and understand how it works better
 """Tokenization utilities using TRL data collators."""
 
 import torch
@@ -10,29 +11,7 @@ def get_data_collator(
     max_seq_length: int = 2048,
     **collator_kwargs,
 ):
-    """Get appropriate data collator for loss function.
-
-    Args:
-        tokenizer: HuggingFace tokenizer
-        loss_fn: Loss function type (causal_lm, dpo, ppo, grpo)
-        max_seq_length: Maximum sequence length
-        **collator_kwargs: Additional collator arguments
-
-    Returns:
-        Data collator instance
-
-    Examples:
-        >>> # Causal LM
-        >>> collator = get_data_collator(tokenizer, "causal_lm")
-
-        >>> # DPO with completion-only masking
-        >>> collator = get_data_collator(
-        ...     tokenizer,
-        ...     "dpo",
-        ...     instruction_template="### Instruction:",
-        ...     response_template="### Response:"
-        ... )
-    """
+    """Get appropriate data collator for loss function."""
     if loss_fn == "causal_lm":
         from transformers import DataCollatorForLanguageModeling
 
@@ -80,34 +59,7 @@ def tokenize_batch(
     loss_fn: str = "causal_lm",
     **collator_kwargs,
 ) -> Dict[str, torch.Tensor]:
-    """Tokenize a batch using appropriate data collator.
-
-    For RL algorithms (DPO, PPO, GRPO), uses TRL's data collators.
-
-    Args:
-        batch_data: List of examples
-        tokenizer: HuggingFace tokenizer
-        max_seq_length: Maximum sequence length
-        loss_fn: Loss function type
-        **collator_kwargs: Additional collator arguments
-
-    Returns:
-        Tokenized batch ready for training
-
-    Examples:
-        >>> # Standard causal LM
-        >>> batch = [{"text": "Hello world"}]
-        >>> tokens = tokenize_batch(batch, tokenizer)
-
-        >>> # Chat format
-        >>> batch = [{
-        ...     "messages": [
-        ...         {"role": "user", "content": "Hi"},
-        ...         {"role": "assistant", "content": "Hello!"}
-        ...     ]
-        ... }]
-        >>> tokens = tokenize_batch(batch, tokenizer)
-    """
+    """Tokenize a batch using appropriate data collator."""
     # Get appropriate collator (used internally by formatting functions)
     _ = get_data_collator(
         tokenizer=tokenizer,

@@ -3,6 +3,9 @@
 import json
 from pathlib import Path
 from typing import Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_run_paths(
@@ -37,7 +40,7 @@ def save_run_config(
     with open(paths["config"], "w") as f:
         json.dump(config, f, indent=2)
 
-    print(f"✓ Run config saved to {paths['config']}")
+    logger.info(f"✓ Run config saved to {paths['config']}")
 
 
 def load_run_config(

@@ -6,8 +6,11 @@ These are minimal helpers for compatibility.
 
 from pathlib import Path
 from typing import Any, Optional
+import logging
 
+logger = logging.getLogger(__name__)
 
+# TODO: isn't ths writing to modal volumes? i need to write to R2 and pull from R2??
 def save_lora_checkpoint(
     model: Any,
     save_path: str,
@@ -24,7 +27,7 @@ def save_lora_checkpoint(
     if tokenizer is not None:
         tokenizer.save_pretrained(save_path)
 
-    print(f"✓ LoRA checkpoint saved to {save_path}")
+    logger.info(f"✓ LoRA checkpoint saved to {save_path}")
 
 
 def save_merged_model(
@@ -38,7 +41,7 @@ def save_merged_model(
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
 
-    print("Merging LoRA weights with base model...")
+    logger.info("Merging LoRA weights with base model...")
 
     # Merge LoRA weights into base model (PEFT handles this)
     merged_model = model.merge_and_unload()
@@ -50,9 +53,9 @@ def save_merged_model(
     if tokenizer is not None:
         tokenizer.save_pretrained(save_path)
 
-    print(f"✓ Merged model saved to {save_path}")
+    logger.info(f"✓ Merged model saved to {save_path}")
 
-
+# TODO: if i pick something up from before and not in the same training session, don't I need to need the run id or something?
 def find_latest_checkpoint(
     lora_adapters_path: Path,
     target_step: Optional[int] = None,

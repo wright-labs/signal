@@ -14,9 +14,7 @@ TRAINING_DATA = [
 
 
 async def main():
-    print("=" * 80)
     print("GPU MONITORING TEST")
-    print("=" * 80)
 
     # Get training session
     print("\n1. Getting training session...")
@@ -45,7 +43,6 @@ async def main():
 
     # Run 5 training steps with timing
     print("\n3. Running 5 training iterations...")
-    print("-" * 80)
 
     for i in range(5):
         # Forward-backward with timing
@@ -102,9 +99,6 @@ async def main():
     # Final state
     final_state = await session.get_state.remote.aio()
 
-    print("\n" + "=" * 80)
-    print("SUMMARY")
-    print("=" * 80)
     print(f"✓ Initialization: {init_time:.2f}s (cold start)")
     print("✓ Average iteration: ~0.5-1s (warm, model stays loaded!)")
     print(f"✓ Sample generation: {sample_time:.2f}s")
@@ -119,7 +113,6 @@ async def main():
     print("\n✅ GPU monitoring test complete!")
     print("\nNote: For detailed GPU utilization (%), need to add pynvml monitoring")
     print("      inside the Modal container. Currently shows memory usage only.")
-    print("=" * 80)
 
 
 if __name__ == "__main__":

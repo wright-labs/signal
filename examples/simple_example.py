@@ -6,6 +6,7 @@ load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 
+
 def main():
     client = SignalClient(api_key=API_KEY)
     run = client.create_run(
@@ -91,9 +92,7 @@ def main():
 
 
 if __name__ == "__main__":
-    print("=" * 80)
     print("Signal API - Supervised Fine-Tuning Example")
-    print("=" * 80)
 
     # Run main example
     main()

@@ -28,7 +28,7 @@ class TestAPIKeyGeneration:
         """Test generating key with description."""
         description = "My test API key"
         _ = api_key_manager.generate_key(test_user_id, description)
-        
+
         keys = api_key_manager.list_keys(test_user_id)
         assert len(keys) == 1
         assert keys[0]["description"] == description

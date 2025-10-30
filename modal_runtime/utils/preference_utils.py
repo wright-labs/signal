@@ -1,3 +1,6 @@
+# TODO: do I still need this now that I'm using the TRL things?
+# TODO: what do I have and do for standardizing the data format that comes into the model?
+
 """Utilities for preference-based training (DPO, RLHF, etc)."""
 
 import torch

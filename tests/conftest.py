@@ -330,7 +330,7 @@ def test_client(
     """Create a FastAPI TestClient with mocked dependencies."""
     # Set test environment variables
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
 
     # Mock the Supabase client getter
     from api import supabase_client

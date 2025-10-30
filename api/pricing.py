@@ -3,26 +3,22 @@
 from datetime import datetime
 from typing import Optional
 import logging
+import yaml
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# TODO: this is duplicated in cost_tracker.py in the backend, need to fix.
-# Modal GPU pricing (per hour, as of Oct 2024)
-GPU_HOURLY_RATES = {
-    "b200": 6.25,
-    "h200": 4.54,
-    "h100": 3.95,
-    "a100-80gb": 2.50,
-    "a100": 2.10,  # 40GB
-    "l40s": 1.95,
-    "a10": 1.10,
-    "a10g": 1.10,  # Alias for a10
-    "l4": 0.80,
-    "t4": 0.59,
-}
 
-# S3 storage pricing (per GB per month)
-STORAGE_COST_PER_GB_MONTH = 0.023
+def _load_pricing_config():
+    """Load pricing configuration from YAML file."""
+    config_path = Path(__file__).parent.parent / "config" / "pricing.yaml"
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
+_pricing_config = _load_pricing_config()
+GPU_HOURLY_RATES = _pricing_config["gpu_hourly_rates"]
+STORAGE_COST_PER_GB_MONTH = _pricing_config["storage_cost_per_gb_month"]
 
 
 def parse_gpu_type(gpu_config: str) -> tuple[str, int]:
@@ -42,46 +38,6 @@ def get_gpu_hourly_rate(gpu_config: str) -> float:
         logger.warning(f"Unknown GPU type '{gpu_type}', using default rate ${rate}/hr")
 
     return rate * count
-
-
-def calculate_estimated_cost(
-    gpu_config: str,
-    estimated_hours: float = 1.0,
-) -> float:
-    """Estimate cost for a training run."""
-    hourly_rate = get_gpu_hourly_rate(gpu_config)
-    return hourly_rate * estimated_hours
-
-
-def calculate_actual_cost(
-    gpu_config: str,
-    started_at: datetime,
-    completed_at: Optional[datetime] = None,
-    storage_bytes: int = 0,
-) -> float:
-    """Calculate actual cost based on runtime and storage."""
-    if completed_at is None:
-        completed_at = datetime.now(started_at.tzinfo or None)
-
-    # Calculate GPU time cost
-    duration_seconds = (completed_at - started_at).total_seconds()
-    duration_hours = duration_seconds / 3600.0
-    hourly_rate = get_gpu_hourly_rate(gpu_config)
-    gpu_cost = hourly_rate * duration_hours
-
-    # Calculate storage cost (prorated per hour)
-    storage_gb = storage_bytes / (1024**3)
-    storage_cost_per_hour = STORAGE_COST_PER_GB_MONTH / 730  # Avg hours per month
-    storage_cost = storage_gb * storage_cost_per_hour * duration_hours
-
-    total_cost = gpu_cost + storage_cost
-
-    logger.info(
-        f"Cost calculation: {duration_hours:.2f}h @ ${hourly_rate:.2f}/h = ${gpu_cost:.4f}, "
-        f"storage {storage_gb:.2f}GB = ${storage_cost:.4f}, total = ${total_cost:.4f}"
-    )
-
-    return total_cost
 
 
 def calculate_storage_cost(storage_bytes: int, hours: float = 1.0) -> float:

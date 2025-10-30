@@ -1,7 +1,10 @@
-"""Pydantic schemas for API requests and responses."""
+"""Pydantic schemas for API requests and responses. I got pydantic/type checking pilled at my last job."""
 
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RunConfig(BaseModel):
@@ -15,7 +18,7 @@ class RunConfig(BaseModel):
     )
     lora_r: int = Field(32, ge=1, le=512, description="LoRA rank (1-512)")
     lora_alpha: int = Field(
-        64, ge=1, le=1024, description="LoRA alpha parameter (1-1024)"
+        32, ge=1, le=1024, description="LoRA alpha parameter (1-1024)"
     )
     lora_dropout: float = Field(
         0.0, ge=0.0, le=0.5, description="LoRA dropout rate (0.0-0.5)"
@@ -30,8 +33,20 @@ class RunConfig(BaseModel):
     weight_decay: float = Field(
         0.01, ge=0.0, le=1.0, description="Weight decay (0.0-1.0)"
     )
+    lr_scheduler: Optional[str] = Field(
+        None,
+        description="Learning rate scheduler: 'cosine', 'linear', 'constant_with_warmup', or None for no scheduler"
+    )
+    warmup_steps: int = Field(
+        0,
+        ge=0,
+        description="Number of warmup steps for learning rate scheduler"
+    )
     max_seq_length: int = Field(
-        2048, ge=128, le=8192, description="Maximum sequence length (128-8192)"
+        2048,
+        ge=128,
+        le=131072,
+        description="Maximum sequence length (128-131072). Will be validated against model's context length."
     )
     bf16: bool = Field(True, description="Use bfloat16 precision")
     gradient_checkpointing: bool = Field(
@@ -42,30 +57,16 @@ class RunConfig(BaseModel):
     @classmethod
     def validate_gpu_config(cls, v: Optional[str]) -> Optional[str]:
         """Validate GPU configuration format."""
-        if v is None:
-            return v
-
-        valid_gpus = ["L40S", "A100", "A100-80GB", "H100", "T4", "A10G"]
-
-        if ":" not in v:
-            raise ValueError(
-                "GPU config must be in format 'gpu_type:count' (e.g., 'L40S:1')"
+        if v is not None:
+            from api.gpu_allocator import (
+                validate_gpu_config as validate_gpu_config_func,
+                GPUConfigError,
             )
 
-        gpu_type, count_str = v.rsplit(":", 1)
-
-        if gpu_type not in valid_gpus:
-            raise ValueError(
-                f"GPU type '{gpu_type}' not supported. Valid types: {', '.join(valid_gpus)}"
-            )
-
-        try:
-            count = int(count_str)
-            if count < 1 or count > 8:
-                raise ValueError("GPU count must be between 1 and 8")
-        except ValueError:
-            raise ValueError("GPU count must be a valid integer")
-
+            try:
+                validate_gpu_config_func(v, raise_http_exception=False)
+            except GPUConfigError as e:
+                raise ValueError(str(e))
         return v
 
     @field_validator("base_model")
@@ -80,6 +81,41 @@ class RunConfig(BaseModel):
         if len(parts) < 2 or not all(parts):
             raise ValueError("Invalid model name format")
         return v
+    
+    @field_validator("max_seq_length")
+    @classmethod
+    def validate_max_seq_length(cls, v: int, info) -> int:
+        """Validate max_seq_length against model's context length."""
+        # Get base_model if available in validation context
+        if hasattr(info, 'data') and 'base_model' in info.data:
+            base_model = info.data['base_model']
+            try:
+                from api.gpu_allocator import get_model_info
+                model_info = get_model_info(base_model)
+                
+                if model_info and model_info.context_length:
+                    if v > model_info.context_length:
+                        logger.warning(
+                            f"max_seq_length ({v}) exceeds model's context length "
+                            f"({model_info.context_length}). Using model's maximum."
+                        )
+                        return model_info.context_length
+            except Exception as e:
+                logger.warning(f"Could not validate max_seq_length against model info: {e}")
+        
+        return v
+    
+    @field_validator("lr_scheduler")
+    @classmethod
+    def validate_lr_scheduler(cls, v: Optional[str]) -> Optional[str]:
+        """Validate learning rate scheduler type."""
+        if v is not None:
+            valid_schedulers = ["cosine", "linear", "constant_with_warmup"]
+            if v not in valid_schedulers:
+                raise ValueError(
+                    f"Invalid lr_scheduler. Must be one of: {', '.join(valid_schedulers)}"
+                )
+        return v
 
 
 class RunResponse(BaseModel):
@@ -93,6 +129,7 @@ class RunResponse(BaseModel):
     config: Dict[str, Any]
 
 
+# TODO: maybe set a much higher max length?
 class TrainingExample(BaseModel):
     """Individual training example with validation.
 
@@ -186,19 +223,11 @@ class TrainingExample(BaseModel):
             raise ValueError("Provide only ONE format: SFT, DPO, GRPO, or PPO")
 
         # Validate format-specific requirements
-        if has_dpo:
-            # Check if any DPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
-
         if has_grpo:
             if len(self.responses) != len(self.rewards):
                 raise ValueError(
                     "Number of responses must match number of rewards for GRPO"
                 )
-
-        if has_ppo:
-            # Check if PPO fields are partially set (shouldn't happen due to all() check above)
-            pass  # Already validated by the all() check
 
         return self
 
@@ -207,7 +236,10 @@ class ForwardBackwardRequest(BaseModel):
     """Request for forward-backward pass."""
 
     batch_data: List[TrainingExample] = Field(
-        ..., min_items=1, max_items=128, description="List of training examples (1-128)"
+        ...,
+        min_items=1,
+        max_items=128,
+        description="List of training examples (1-128)",  # TODO: once again, should probably allow larger batch sizes?
     )
     accumulate: bool = Field(
         False, description="Accumulate gradients instead of replacing"
@@ -249,6 +281,7 @@ class ForwardBackwardRequest(BaseModel):
         None, description="Reference model name for KL divergence penalty"
     )
 
+    # TODO: need to study up and see if I need this
     # GAE parameters
     use_gae: bool = Field(False, description="Use Generalized Advantage Estimation")
     gamma: float = Field(0.99, description="Discount factor for GAE")
@@ -284,6 +317,7 @@ class ForwardBackwardResponse(BaseModel):
 class OptimStepRequest(BaseModel):
     """Request for optimizer step."""
 
+    # TODO: should probably make a learning rate scheduler?
     learning_rate: Optional[float] = Field(
         None, description="Override learning rate for this step"
     )
@@ -333,9 +367,11 @@ class SaveStateRequest(BaseModel):
 class SaveStateResponse(BaseModel):
     """Response from saving state."""
 
-    artifact_uri: str  # Local path (backward compatibility)
+    artifact_uri: str  # Local path (backward compatibility) # TODO: do i need this anymore with R2?
     local_path: Optional[str] = None  # Explicit local path
-    checkpoint_path: str  # Deprecated, use local_path
+    checkpoint_path: (
+        str  # Deprecated, use local_path # TODO: do i need this anymore with R2?
+    )
     s3_uri: Optional[str] = None  # S3 URI for permanent storage
     download_url: Optional[str] = None  # Pre-signed S3 download URL
     download_expires_at: Optional[str] = None  # Expiration timestamp for download URL
@@ -450,6 +486,7 @@ class ModelInfoResponse(BaseModel):
     chat_template: Optional[str] = Field(None, description="Chat template if available")
 
 
+# TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateRequest(BaseModel):
     """Request for applying chat template."""
 
@@ -461,6 +498,7 @@ class ApplyChatTemplateRequest(BaseModel):
     )
 
 
+# TODO: once again should decide if i need chat template anymore
 class ApplyChatTemplateResponse(BaseModel):
     """Response from applying chat template."""
 
@@ -569,3 +607,86 @@ class QueueStatsResponse(BaseModel):
     running: int = Field(..., description="Running requests")
     completed: int = Field(..., description="Completed requests")
     failed: int = Field(..., description="Failed requests")
+
+
+class DeployInferenceRequest(BaseModel):
+    """Request to deploy a trained model to serverless inference."""
+
+    gpu_config: str = Field(
+        "A10G",
+        description="GPU configuration for inference (e.g., 'A10G', 'A100', 'L40S')",
+    )
+    artifact_uri: Optional[str] = Field(
+        None,
+        description="Specific checkpoint S3 URI to deploy (if None, uses latest)",
+    )
+    max_model_len: int = Field(
+        2048,
+        ge=512,
+        le=32768,
+        description="Maximum sequence length for inference (512-32768)",
+    )
+    tensor_parallel_size: int = Field(
+        1,
+        ge=1,
+        le=8,
+        description="Number of GPUs for tensor parallelism (1-8)",
+    )
+    max_concurrent_requests: int = Field(
+        100,
+        ge=1,
+        le=1000,
+        description="Maximum concurrent requests (1-1000)",
+    )
+
+    @field_validator("gpu_config")
+    @classmethod
+    def validate_gpu_config(cls, v: str) -> str:
+        """Validate GPU configuration format."""
+        valid_gpus = ["A10G", "A100", "A100-80GB", "L40S", "H100"]
+        if v not in valid_gpus:
+            raise ValueError(
+                f"Invalid GPU config. Must be one of: {', '.join(valid_gpus)}"
+            )
+        return v
+
+
+class DeployInferenceResponse(BaseModel):
+    """Response from deploying an inference endpoint."""
+
+    deployment_id: str = Field(..., description="Unique deployment identifier")
+    inference_url: str = Field(..., description="Base URL for inference requests")
+    openai_base_url: str = Field(
+        ..., description="OpenAI-compatible base URL for SDK integration"
+    )
+    model_id: str = Field(
+        ..., description="Model identifier to use in OpenAI client requests"
+    )
+    status: str = Field(..., description="Deployment status")
+    base_model: str = Field(..., description="Base model used")
+    lora_enabled: bool = Field(..., description="Whether LoRA adapter is loaded")
+    gpu_config: str = Field(..., description="GPU configuration")
+    endpoints: Dict[str, str] = Field(
+        ..., description="Available API endpoints (chat, completions, health)"
+    )
+    created_at: str = Field(..., description="Deployment timestamp")
+
+
+class DeploymentStatusResponse(BaseModel):
+    """Response for checking deployment status."""
+
+    deployment_id: str = Field(..., description="Deployment identifier")
+    status: str = Field(
+        ..., description="Status: 'deploying', 'active', 'failed', 'stopped'"
+    )
+    inference_url: Optional[str] = Field(None, description="Inference URL if active")
+    error: Optional[str] = Field(None, description="Error message if failed")
+    uptime_seconds: Optional[int] = Field(None, description="Uptime in seconds")
+    request_count: Optional[int] = Field(None, description="Total requests served")
+
+
+class ListDeploymentsResponse(BaseModel):
+    """Response for listing user's deployments."""
+
+    deployments: List[Dict[str, Any]] = Field(..., description="List of deployments")
+    total: int = Field(..., description="Total number of deployments")

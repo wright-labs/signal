@@ -59,6 +59,7 @@ TRAINING_IMAGE = (
             "bitsandbytes",  # Quantization and 8-bit optimizer
             "accelerate",  # Training utilities
             "trl",  # Transformer Reinforcement Learning (DPO, PPO, etc.)
+            "vllm>=0.6.0",  # Fast inference engine for training sampling
             "safetensors",  # Safe model serialization
             "sentencepiece",  # Tokenization
             "protobuf",  # Protocol buffers
@@ -85,5 +86,39 @@ TRAINING_IMAGE = (
     )
 )
 
-# Inference image - use same as training for simplicity
-INFERENCE_IMAGE = TRAINING_IMAGE
+# TODO: seriously, i really need to figure out how to do this scalably, read modal docs
+# Inference image optimized for vLLM serving
+INFERENCE_IMAGE = (
+    ModalImage.from_registry(f"nvidia/cuda:{CUDA_TAG}", add_python="3.12")
+    .apt_install(
+        "git",
+        "build-essential",
+    )
+    # Install vLLM and dependencies for serverless inference
+    .uv_pip_install(
+        [
+            "vllm>=0.6.0",  # Fast inference engine
+            "transformers",  # HuggingFace transformers
+            "peft",  # LoRA adapter support
+            "safetensors",  # Safe model serialization
+            "sentencepiece",  # Tokenization
+            "protobuf",  # Protocol buffers
+            "fastapi",  # Web framework for endpoints
+            "pydantic",  # Data validation
+            "boto3",  # AWS S3 for model downloads
+            "botocore",  # AWS core library
+            "hf_transfer",  # Fast HuggingFace downloads
+        ]
+    )
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "HF_HOME": "/data/.cache",
+            "PYTHONPATH": "/root",
+        }
+    )
+    .add_local_dir(
+        local_path=Path(__file__).parent,
+        remote_path="/root/modal_runtime",
+    )
+)
