@@ -19,12 +19,12 @@ def get_client_ip(request: Request) -> str:
 
 
 async def verify_auth(
+    request: Request,
     authorization: Optional[str] = Header(None),
-    request: Optional[Request] = None
 ) -> str:
     """Verify API key and return user_id."""
-    ip = get_client_ip(request) if request else "unknown"
-    user_agent = request.headers.get("user-agent", "unknown") if request else "unknown"
+    ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "unknown")
     
     if not authorization:
         security_logger.log_auth_failure(ip, user_agent, "Missing authorization header")

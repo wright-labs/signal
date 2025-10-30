@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -27,7 +27,7 @@ load_dotenv()
 # Add current directory to path for modal_runtime imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from api.auth import AuthManager, get_client_ip
+from api.auth import verify_auth, get_client_ip
 from api.registry import RunRegistry
 from api.models import ModelRegistry
 from api.logging_config import security_logger
@@ -215,7 +215,6 @@ app.add_middleware(
 # app.include_router(openai_router) TODO: for one click deploy to serve, probably need this, surely
 
 # Initialize managers
-auth_manager = AuthManager()
 run_registry = RunRegistry()
 model_registry = ModelRegistry()
 
@@ -226,55 +225,6 @@ logging.basicConfig(
 )
 
 # AUTHENTICATIONs
-
-
-async def verify_auth(
-    authorization: Optional[str] = Header(None), request: Request = None
-) -> str:
-    """Verify authentication (JWT or API key) and return user_id."""
-    if not authorization:
-        if request:
-            ip = get_client_ip(request)
-            user_agent = request.headers.get("user-agent", "unknown")
-            security_logger.log_auth_failure(
-                ip, user_agent, "Missing authorization header"
-            )
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        if request:
-            ip = get_client_ip(request)
-            user_agent = request.headers.get("user-agent", "unknown")
-            security_logger.log_auth_failure(
-                ip, user_agent, "Invalid authorization header format"
-            )
-        raise HTTPException(
-            status_code=401, detail="Invalid authorization header format"
-        )
-
-    token = parts[1]
-
-    # Try API key (sk-) or JWT token
-    if token.startswith("sk-"):
-        user_id = await auth_manager.validate_api_key(token)
-        if user_id:
-            if request:
-                request.state.user_id = user_id
-            return user_id
-    else:
-        user_id = await auth_manager.validate_jwt_token(token)
-        if user_id:
-            if request:
-                request.state.user_id = user_id
-            return user_id
-
-    if request:
-        ip = get_client_ip(request)
-        user_agent = request.headers.get("user-agent", "unknown")
-        security_logger.log_auth_failure(ip, user_agent, "Invalid credentials")
-
-    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 async def get_authorized_run(run_id: str, user_id: str) -> Dict[str, Any]:
