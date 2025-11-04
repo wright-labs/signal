@@ -310,7 +310,15 @@ class TrainingSession:
                     lr=learning_rate,
                     weight_decay=weight_decay,
                 )
-                # TODO: add muon, and maybe even allow users to choose any torch.optim?
+            # TODO: add muon, and maybe even allow users to choose any torch.optim?
+            elif optimizer == "muon":
+                from torch.optim import Muon
+
+                self.optimizer = Muon(
+                    trainable_params,
+                    lr=learning_rate,
+                    weight_decay=weight_decay,
+                )
             else:
                 raise ValueError(f"Unsupported optimizer: {optimizer}")
 
