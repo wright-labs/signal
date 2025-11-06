@@ -42,8 +42,20 @@ def load_model_and_tokenizer(
     )
     from peft import prepare_model_for_kbit_training
 
-    # Set HuggingFace token if available
-    os.environ["HF_TOKEN"] = os.environ.get("HUGGINGFACE_TOKEN", "")
+    # Set HuggingFace token if available (from Modal secret)
+    # The secret provides HF_TOKEN, ensure it's available for transformers
+    hf_token = os.environ.get("HF_TOKEN", "")
+    if not hf_token:
+        # Try alternative env var name
+        hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN", "")
+    
+    if hf_token:
+        # Set both for compatibility
+        os.environ["HF_TOKEN"] = hf_token
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+        logger.info("HF_TOKEN found in environment")
+    else:
+        logger.warning("HF_TOKEN not found in environment - may fail for gated models")
 
     # Configure quantization
     quantization_config = None
@@ -64,6 +76,7 @@ def load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
+        token=hf_token if hf_token else None,
     )
 
     # Ensure tokenizer has pad token
@@ -89,6 +102,7 @@ def load_model_and_tokenizer(
         torch_dtype=torch.bfloat16 if bf16 else torch.float16,
         device_map=device_map,
         trust_remote_code=True,
+        token=hf_token if hf_token else None,
     )
 
     # CRITICAL: Prepare model based on quantization
