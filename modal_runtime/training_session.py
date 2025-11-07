@@ -67,6 +67,8 @@ class TrainingSession:
     monitor_thread: threading.Thread = None
     wandb_run: Any = None
     last_loss: float = 0.0
+    last_grad_norm: float = 0.0
+    last_perplexity: float = 0.0
     vllm_engine: Any = None  # vLLM engine for fast inference
 
     @modal.enter()
@@ -217,26 +219,40 @@ class TrainingSession:
                     import os
                     from datetime import datetime
 
+                    # Set WandB API key from integration
+                    os.environ["WANDB_API_KEY"] = integrations["wandb"]
+                    
                     # Create experiment name: model_datetime
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     experiment_name = f"{base_model.replace('/', '_')}_{timestamp}"
+                    
+                    # Get optional wandb config from integrations dict
+                    # Format: integrations can have "wandb_project" and "wandb_entity" keys
+                    wandb_project = integrations.get("wandb_project", "signal-training")
+                    wandb_entity = integrations.get("wandb_entity", None)
 
                     # Initialize WandB
-                    os.environ["WANDB_API_KEY"] = integrations["wandb"]
                     self.wandb_run = wandb.init(
-                        project="signal-training",
+                        project=wandb_project,
+                        entity=wandb_entity,
                         name=experiment_name,
-                        config=self.config,
+                        config={
+                            **self.config,
+                            "run_id": run_id,
+                            "user_id": user_id,
+                        },
                         resume="allow",
                         id=run_id,  # Use run_id for resume capability
+                        tags=["signal", base_model.split("/")[-1]] if "/" in base_model else ["signal"],
                     )
-                    logger.info(f"✓ WandB initialized: {experiment_name}")
+                    logger.info(f"✓ WandB initialized: project={wandb_project}, run={experiment_name}")
                 except Exception as e:
                     logger.warning(f"⚠ Failed to initialize WandB: {e}")
+                    logger.warning(f"⚠ WandB error details: {traceback.format_exc()}")
                     self.wandb_run = None
             else:
                 self.wandb_run = None
-                logger.info("ℹ WandB not configured (no API key)")
+                logger.info("ℹ WandB not configured (no API key provided)")
 
             # Check if resuming from checkpoint
             if resume_from_step is not None:
@@ -460,8 +476,10 @@ class TrainingSession:
                 else grad_norm.item(),
             }
 
-            # Store loss for WandB logging in optim_step
+            # Store metrics for WandB logging in optim_step
             self.last_loss = metrics["loss"]
+            self.last_grad_norm = metrics["grad_norm"]
+            self.last_perplexity = metrics["perplexity"]
 
             logger.info("✓ FORWARD-BACKWARD COMPLETE")
             logger.info(
@@ -542,12 +560,14 @@ class TrainingSession:
                     self.wandb_run.log(
                         {
                             "train/loss": self.last_loss,
+                            "train/perplexity": self.last_perplexity,
+                            "train/grad_norm": self.last_grad_norm,
                             "train/learning_rate": current_lr,
                             "train/step": self.current_step,
                         }
                     )
                 except Exception as e:
-                    logger.info(f"⚠ Failed to log to WandB: {e}")
+                    logger.warning(f"⚠ Failed to log to WandB: {e}")
 
             logger.info("✓ OPTIMIZER STEP COMPLETE")
             logger.info(f"New step: {self.current_step}")
